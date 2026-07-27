@@ -1,0 +1,21 @@
+# mini model registry — curated 2026-07.
+# Ordered best → smallest. mini picks the first row that fits the memory budget.
+#
+# id            <TAB> min_budget_mb <TAB> max_ctx <TAB> class <TAB> note
+#
+# min_budget_mb = memory the weights + a working KV cache realistically need.
+# max_ctx       = the model's NATIVE context. Do not raise it hoping for more:
+#                 ollama honours the architecture limit and silently runs at the
+#                 native size, so an inflated number here just makes mini lie.
+#                 Verify with: ollama show <model> | grep 'context length'
+#
+# Sizes are approximate. `mini models --refresh` re-checks availability.
+#
+qwen3-coder:30b		20000	262144	agentic	MoE 30B with ~3B active — strongest local agentic coder. Wants a 24GB GPU.
+devstral:24b		15000	131072	agentic	Mistral's SWE-agent coder. Excellent multi-step tool use.
+gpt-oss:20b		13000	131072	general	OpenAI open-weights. Strong tool calling, good generalist.
+qwen2.5-coder:14b	9000	32768	coder	Solid mid-tier coder. The 12GB-GPU sweet spot.
+qwen2.5-coder:7b	5000	32768	coder	The dependable baseline. Reliable tool calls on 8GB.
+qwen2.5-coder:3b	3000	32768	coder	Small-box fallback. Fine for simple edits and shell work.
+qwen2.5-coder:1.5b	2000	32768	coder	Very small. Tool calls get shaky — expect to hand-hold it.
+qwen2.5-coder:0.5b	1200	32768	coder	Last resort. Not dependable for agentic work.

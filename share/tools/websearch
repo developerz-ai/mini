@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# websearch — search the web from the shell, no API key.
+#
+#   websearch "systemd service exited code 203"
+#   websearch -n 10 "nginx 502 upstream prematurely closed"
+#
+# Uses DuckDuckGo's lite endpoint, which serves plain HTML to a normal browser
+# user agent. Output is plain text so a model can read it directly.
+set -euo pipefail
+
+COUNT=5
+UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+
+usage() {
+  cat >&2 <<'EOF'
+usage: websearch [-n COUNT] "query"
+  -n COUNT   number of results (default 5, max 25)
+EOF
+  exit 2
+}
+
+while getopts ':n:h' opt; do
+  case "$opt" in
+    n) COUNT="$OPTARG" ;;
+    h) usage ;;
+    *) usage ;;
+  esac
+done
+shift $(( OPTIND - 1 ))
+
+QUERY="$*"
+[ -n "$QUERY" ] || usage
+case "$COUNT" in ''|*[!0-9]*) COUNT=5 ;; esac
+[ "$COUNT" -gt 25 ] && COUNT=25
+
+fetch_results() {
+  curl -sS --max-time 20 --compressed \
+    -A "$UA" \
+    -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
+    -H 'Accept-Language: en-US,en;q=0.9' \
+    -H 'Referer: https://lite.duckduckgo.com/' \
+    -H 'Sec-Fetch-Mode: navigate' \
+    -H 'Sec-Fetch-Site: same-origin' \
+    --data-urlencode "q=${QUERY}" \
+    'https://lite.duckduckgo.com/lite/' 2>/dev/null
+}
+
+# Back-to-back queries occasionally get a results-free page. One retry after a
+# short pause turns that from a failure into a hiccup.
+html=''
+for attempt in 1 2 3; do
+  html=$(fetch_results) || html=''
+  case "$html" in *result-link*) break ;; esac
+  [ "$attempt" -lt 3 ] && sleep "$attempt"
+done
+
+if [ -z "$html" ]; then
+  printf 'websearch: no response (no network?)\n' >&2; exit 1
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  printf '%s' "$html" | COUNT="$COUNT" QUERY="$QUERY" python3 -c '
+import html as H, os, re, sys
+raw = sys.stdin.read()
+n = int(os.environ.get("COUNT", "5"))
+
+# Lite layout: <a rel="nofollow" href="URL" class=result-link>TITLE</a>, then a
+# <td class=result-snippet>…</td> row. Attribute order and quote style both
+# vary, so match the tag first and pull href out of it separately.
+tags = re.findall(
+    r"<a\b([^>]*class=[\x27\"]?result-link[\x27\"]?[^>]*)>(.*?)</a>",
+    raw, re.S | re.I)
+links = []
+for attrs, title in tags:
+    m = re.search(r"href=[\x27\"]([^\x27\"]+)[\x27\"]", attrs)
+    if m:
+        links.append((m.group(1), title))
+
+snips = re.findall(
+    r"class=[\x27\"]?result-snippet[\x27\"]?[^>]*>(.*?)</td>", raw, re.S | re.I)
+
+def clean(s):
+    s = re.sub(r"<[^>]+>", " ", s)
+    return re.sub(r"\s+", " ", H.unescape(s)).strip()
+
+if not links:
+    print("no results (the search page layout may have changed)")
+    sys.exit(0)
+
+query = os.environ.get("QUERY", "")
+hits = links[:n]
+print(f"{len(hits)} results for: {query}\n")
+for i, (url, title) in enumerate(hits, 1):
+    if url.startswith("//"):
+        url = "https:" + url
+    print(f"{i}. {clean(title)}")
+    print(f"   {url}")
+    if i - 1 < len(snips):
+        s = clean(snips[i - 1])
+        if s:
+            print(f"   {s[:300]}")
+    print()
+print("read one with:  webfetch <url>")
+'
+else
+  # No python3: crude but functional.
+  printf 'results for: %s\n\n' "$QUERY"
+  printf '%s' "$html" \
+    | grep -oE "<a[^>]*href=[\"'][^\"']+[\"'][^>]*result-link" \
+    | grep -oE "href=[\"'][^\"']+" \
+    | sed "s/^href=[\"']//" \
+    | head -n "$COUNT" \
+    | awk '{printf "%d. %s\n", NR, $0}'
+  printf '\nread one with:  webfetch <url>\n'
+fi

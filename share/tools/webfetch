@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# webfetch — fetch a URL and print it as readable text.
+#
+#   webfetch https://systemd.io/DEBUGGING/
+#   webfetch -c 40000 https://docs.docker.com/engine/install/debian/
+#
+# Sends the headers a normal desktop browser sends, follows redirects, and
+# strips the page down to text a model can actually read. Script, style, nav
+# and footer chrome are dropped.
+set -euo pipefail
+
+MAX_CHARS=20000
+UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+
+usage() {
+  cat >&2 <<'EOF'
+usage: webfetch [-c MAX_CHARS] [-r] URL
+  -c MAX_CHARS   truncate output (default 20000)
+  -r             raw: print the body without converting to text
+EOF
+  exit 2
+}
+
+RAW=0
+while getopts ':c:rh' opt; do
+  case "$opt" in
+    c) MAX_CHARS="$OPTARG" ;;
+    r) RAW=1 ;;
+    h) usage ;;
+    *) usage ;;
+  esac
+done
+shift $(( OPTIND - 1 ))
+
+URL="${1:-}"
+[ -n "$URL" ] || usage
+case "$URL" in
+  http://*|https://*) ;;
+  *) URL="https://${URL}" ;;
+esac
+case "$MAX_CHARS" in ''|*[!0-9]*) MAX_CHARS=20000 ;; esac
+
+body=$(curl -sSL --max-time 30 --compressed --max-redirs 5 \
+  -A "$UA" \
+  -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' \
+  -H 'Accept-Language: en-US,en;q=0.9' \
+  -H 'Upgrade-Insecure-Requests: 1' \
+  -H 'Sec-Fetch-Dest: document' \
+  -H 'Sec-Fetch-Mode: navigate' \
+  -H 'Sec-Fetch-Site: none' \
+  -H 'Sec-Fetch-User: ?1' \
+  "$URL" 2>/dev/null) || { printf 'webfetch: request failed for %s\n' "$URL" >&2; exit 1; }
+
+[ -n "$body" ] || { printf 'webfetch: empty response from %s\n' "$URL" >&2; exit 1; }
+
+if [ "$RAW" -eq 1 ]; then
+  printf '%s' "$body" | head -c "$MAX_CHARS"
+  exit 0
+fi
+
+printf '# %s\n\n' "$URL"
+
+# Prefer a real text browser when the user has one; it renders tables and lists
+# far better than any regex.
+if command -v w3m >/dev/null 2>&1; then
+  printf '%s' "$body" | w3m -dump -T text/html 2>/dev/null | head -c "$MAX_CHARS"
+elif command -v lynx >/dev/null 2>&1; then
+  printf '%s' "$body" | lynx -stdin -dump -nolist 2>/dev/null | head -c "$MAX_CHARS"
+elif command -v python3 >/dev/null 2>&1; then
+  printf '%s' "$body" | MAX_CHARS="$MAX_CHARS" python3 -c '
+import html as H, os, re, sys
+raw = sys.stdin.read()
+limit = int(os.environ.get("MAX_CHARS", "20000"))
+
+# Drop everything that is not prose.
+for tag in ("script", "style", "noscript", "svg", "head", "nav", "footer", "form"):
+    raw = re.sub(rf"<{tag}\b.*?</{tag}>", " ", raw, flags=re.S | re.I)
+
+# Keep document structure the model can navigate by.
+raw = re.sub(r"<h([1-6])[^>]*>(.*?)</h\1>",
+             lambda m: "\n\n" + "#" * int(m.group(1)) + " " + m.group(2) + "\n", raw, flags=re.S | re.I)
+raw = re.sub(r"<li[^>]*>", "\n- ", raw, flags=re.I)
+raw = re.sub(r"<(br|/p|/div|/tr|/section)[^>]*>", "\n", raw, flags=re.I)
+raw = re.sub(r"</(pre|code)>", "\n", raw, flags=re.I)
+
+raw = re.sub(r"<[^>]+>", " ", raw)
+raw = H.unescape(raw)
+raw = re.sub(r"[ \t\xa0]+", " ", raw)
+raw = re.sub(r" *\n *", "\n", raw)
+raw = re.sub(r"\n{3,}", "\n\n", raw).strip()
+
+out = raw[:limit]
+print(out)
+if len(raw) > limit:
+    print(f"\n… truncated at {limit} chars of {len(raw)}. Re-run with -c to read more.")
+'
+else
+  printf '%s' "$body" \
+    | sed -e 's/<script[^>]*>.*<\/script>//gI' \
+          -e 's/<style[^>]*>.*<\/style>//gI' \
+          -e 's/<[^>]*>/ /g' \
+    | tr -s ' \n' ' \n' \
+    | head -c "$MAX_CHARS"
+fi

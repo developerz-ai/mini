@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# sysreport — one snapshot of what this machine is doing wrong.
+#
+#   sysreport            the usual suspects
+#   sysreport -f         full: adds packages, mounts, network detail
+#
+# Cheaper than making the model run twelve commands and read twelve outputs.
+# Read-only: this script never changes anything.
+set -uo pipefail
+
+FULL=0
+[ "${1:-}" = '-f' ] || [ "${1:-}" = '--full' ] && FULL=1
+
+sec() { printf '\n## %s\n' "$1"; }
+run() {
+  local label="$1"; shift
+  printf '\n$ %s\n' "$label"
+  "$@" 2>&1 | head -n "${LINES_LIMIT:-25}"
+}
+
+printf '# sysreport — %s — %s\n' "$(hostname)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
+
+sec 'Identity'
+if [ -r /etc/os-release ]; then
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  printf 'os        %s\n' "${PRETTY_NAME:-unknown}"
+fi
+printf 'kernel    %s\n' "$(uname -r)"
+printf 'uptime    %s\n' "$(uptime -p 2>/dev/null || uptime)"
+printf 'load      %s (cores: %s)\n' "$(cut -d' ' -f1-3 /proc/loadavg)" "$(nproc)"
+[ -f /.dockerenv ] && printf 'container yes\n'
+
+sec 'Failed services'
+if command -v systemctl >/dev/null 2>&1; then
+  out=$(systemctl --failed --no-pager --no-legend 2>/dev/null)
+  if [ -n "$out" ]; then printf '%s\n' "$out"; else printf 'none\n'; fi
+else
+  printf 'not a systemd host\n'
+fi
+
+sec 'Disk'
+df -h -x tmpfs -x devtmpfs 2>/dev/null | head -n 15
+printf '\ninodes:\n'
+df -i -x tmpfs -x devtmpfs 2>/dev/null | awk 'NR==1 || ($5+0)>80' | head -n 10
+
+sec 'Memory'
+free -h
+if command -v journalctl >/dev/null 2>&1; then
+  oom=$(journalctl -b -k --no-pager 2>/dev/null | grep -ci 'out of memory\|oom-kill')
+  printf '\noom kills this boot: %s\n' "${oom:-0}"
+fi
+
+sec 'Top processes'
+ps -eo pcpu,pmem,rss,comm --sort=-pcpu 2>/dev/null | head -n 8
+printf '\nby memory:\n'
+ps -eo pcpu,pmem,rss,comm --sort=-rss 2>/dev/null | head -n 6
+
+sec 'Listening'
+if command -v ss >/dev/null 2>&1; then
+  ss -tulpn 2>/dev/null | head -n 25
+else
+  netstat -tulpn 2>/dev/null | head -n 25
+fi
+
+sec 'Recent errors'
+if command -v journalctl >/dev/null 2>&1; then
+  journalctl -p err -b --no-pager 2>/dev/null | tail -n 25
+else
+  tail -n 25 /var/log/syslog 2>/dev/null || printf 'no journal, no syslog\n'
+fi
+
+sec 'Kernel warnings'
+dmesg -T --level=err,warn 2>/dev/null | tail -n 15 || printf 'dmesg needs root here\n'
+
+if [ "$FULL" -eq 1 ]; then
+  sec 'Network'
+  ip -brief addr 2>/dev/null
+  printf '\nroutes:\n'; ip route 2>/dev/null | head -n 10
+  command -v resolvectl >/dev/null 2>&1 && { printf '\ndns:\n'; resolvectl status 2>/dev/null | grep -E 'DNS Servers|Current DNS' | head -n 5; }
+
+  sec 'Firewall'
+  if command -v ufw >/dev/null 2>&1; then sudo -n ufw status 2>/dev/null || printf 'ufw present (needs root to read)\n'; else printf 'no ufw\n'; fi
+
+  sec 'Mounts'
+  findmnt -t ext4,xfs,btrfs,zfs,vfat --output TARGET,SOURCE,FSTYPE,OPTIONS 2>/dev/null | head -n 15
+
+  sec 'Recently installed packages'
+  grep ' install ' /var/log/dpkg.log 2>/dev/null | tail -n 15 || printf 'no dpkg log\n'
+
+  sec 'Journal size'
+  journalctl --disk-usage 2>/dev/null
+fi
+
+printf '\n(read-only snapshot; nothing was changed)\n'
