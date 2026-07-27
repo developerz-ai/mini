@@ -9,6 +9,53 @@ d_warn() { printf '  %s %s\n' "${C_YELLOW}!${C_RESET}" "$1"; DOCTOR_WARNS=$(( DO
 d_fail() { printf '  %s %s\n' "${C_RED}✗${C_RESET}" "$1"; DOCTOR_FAILS=$(( DOCTOR_FAILS + 1 )); }
 d_fix()  { printf '      %s\n' "${C_DIM}fix: $1${C_RESET}"; }
 
+# opencode install + generated config. Shared by the local and remote paths.
+doctor_opencode_section() {
+  step "opencode"
+  if opencode_bin >/dev/null 2>&1; then
+    d_ok "opencode installed ${C_DIM}($("$(opencode_bin)" --version 2>/dev/null))${C_RESET}"
+  else
+    d_fail "opencode not installed"; d_fix "mini setup"
+  fi
+  if [ -f "${MINI_HOME}/opencode.json" ]; then
+    d_ok "config ${MINI_HOME}/opencode.json"
+  else
+    d_fail "mini's opencode config missing"; d_fix "mini setup"
+  fi
+  if [ -f "${MINI_HOME}/AGENTS.md" ]; then
+    d_ok "brain ${MINI_HOME}/AGENTS.md"
+  else
+    d_fail "AGENTS.md missing"; d_fix "mini setup"
+  fi
+  local mem_count
+  mem_count=$(find "${MINI_HOME}/memories" -maxdepth 1 -name '*.md' 2>/dev/null | wc -l)
+  d_ok "memories: ${mem_count} file(s) in ${MINI_HOME}/memories"
+
+}
+
+# The three tools, in both their shell and opencode forms.
+doctor_tools_section() {
+  step "Tools"
+  for t in websearch webfetch sysreport; do
+    if [ -x "${MINI_HOME}/tools/${t}" ]; then d_ok "$t ${C_DIM}(shell)${C_RESET}"; else d_warn "$t not installed"; d_fix "mini setup"; fi
+  done
+  local tools_dir="${HOME}/.config/opencode/tools" oc_missing=0
+  for t in mini_search mini_fetch mini_sysreport; do
+    [ -f "${tools_dir}/${t}.ts" ] || oc_missing=1
+  done
+  if [ "$oc_missing" -eq 0 ]; then
+    d_ok "mini_search mini_fetch mini_sysreport ${C_DIM}(opencode tools)${C_RESET}"
+  else
+    d_warn "opencode tools not installed in ${tools_dir}"; d_fix "mini setup"
+  fi
+  if curl -sf --max-time 8 -o /dev/null 'https://lite.duckduckgo.com/lite/'; then
+    d_ok "outbound https works ${C_DIM}(websearch will function)${C_RESET}"
+  else
+    d_warn "no outbound https — websearch/webfetch will fail"
+  fi
+
+}
+
 doctor_run() {
   detect_all
 
@@ -43,6 +90,30 @@ doctor_run() {
   done
   if has python3; then d_ok "python3 ${C_DIM}(better html→text for webfetch)${C_RESET}"
   else d_warn "python3 missing — webfetch falls back to crude tag stripping"; d_fix "sudo apt install -y python3"; fi
+
+  # Remote inference skips the whole local-server section.
+  if [ "$(cfg_get MINI_PROVIDER)" = 'remote' ]; then
+    step "Inference"
+    local r_url r_model
+    r_url=$(cfg_get MINI_REMOTE_URL); r_model=$(cfg_get MINI_REMOTE_MODEL)
+    d_ok "remote: ${r_model} via ${r_url}"
+    if curl -sf --max-time 10 -o /dev/null "$r_url" 2>/dev/null; then
+      d_ok "endpoint reachable"
+    else
+      d_warn "could not reach ${r_url} (it may still work — some endpoints reject bare GETs)"
+    fi
+    if [ -f "${MINI_HOME}/api-key" ]; then
+      local km; km=$(stat -c '%a' "${MINI_HOME}/api-key" 2>/dev/null)
+      [ "$km" = '600' ] && d_ok "api key stored 0600" \
+        || { d_fail "api key is mode ${km}"; d_fix "chmod 600 ${MINI_HOME}/api-key"; }
+    fi
+    doctor_opencode_section
+    doctor_tools_section
+    say ''
+    [ "$DOCTOR_FAILS" -gt 0 ] && { err "${DOCTOR_FAILS} problem(s), ${DOCTOR_WARNS} warning(s)"; return 1; }
+    ok "healthy (remote inference)"
+    return 0
+  fi
 
   step "Ollama"
   if has ollama; then
@@ -101,44 +172,8 @@ doctor_run() {
     fi
   fi
 
-  step "opencode"
-  if opencode_bin >/dev/null 2>&1; then
-    d_ok "opencode installed ${C_DIM}($("$(opencode_bin)" --version 2>/dev/null))${C_RESET}"
-  else
-    d_fail "opencode not installed"; d_fix "mini setup"
-  fi
-  if [ -f "${MINI_HOME}/opencode.json" ]; then
-    d_ok "config ${MINI_HOME}/opencode.json"
-  else
-    d_fail "mini's opencode config missing"; d_fix "mini setup"
-  fi
-  if [ -f "${MINI_HOME}/AGENTS.md" ]; then
-    d_ok "brain ${MINI_HOME}/AGENTS.md"
-  else
-    d_fail "AGENTS.md missing"; d_fix "mini setup"
-  fi
-  local mem_count
-  mem_count=$(find "${MINI_HOME}/memories" -maxdepth 1 -name '*.md' 2>/dev/null | wc -l)
-  d_ok "memories: ${mem_count} file(s) in ${MINI_HOME}/memories"
-
-  step "Tools"
-  for t in websearch webfetch sysreport; do
-    if [ -x "${MINI_HOME}/tools/${t}" ]; then d_ok "$t ${C_DIM}(shell)${C_RESET}"; else d_warn "$t not installed"; d_fix "mini setup"; fi
-  done
-  local tools_dir="${HOME}/.config/opencode/tools" oc_missing=0
-  for t in mini_search mini_fetch mini_sysreport; do
-    [ -f "${tools_dir}/${t}.ts" ] || oc_missing=1
-  done
-  if [ "$oc_missing" -eq 0 ]; then
-    d_ok "mini_search mini_fetch mini_sysreport ${C_DIM}(opencode tools)${C_RESET}"
-  else
-    d_warn "opencode tools not installed in ${tools_dir}"; d_fix "mini setup"
-  fi
-  if curl -sf --max-time 8 -o /dev/null 'https://lite.duckduckgo.com/lite/'; then
-    d_ok "outbound https works ${C_DIM}(websearch will function)${C_RESET}"
-  else
-    d_warn "no outbound https — websearch/webfetch will fail"
-  fi
+  doctor_opencode_section
+  doctor_tools_section
 
   step "Secrets"
   local secret="${MINI_HOME}/secret"
@@ -155,6 +190,17 @@ doctor_run() {
   fi
 
   step "Capacity"
+  # No GPU is not a failure, but it is the single biggest thing shaping what
+  # this feels like to use — so say it plainly instead of letting the user
+  # discover it by waiting.
+  if [ "${ACCEL:-cpu}" = 'cpu' ]; then
+    d_warn "no usable GPU — inference runs on CPU"
+    printf '      %s\n' "${C_DIM}Expect a few tokens/sec, and minutes for the first turn of a session${C_RESET}"
+    printf '      %s\n' "${C_DIM}while the prompt is processed. Later turns in the same session are faster.${C_RESET}"
+    d_fix "for real speed, point mini at an external endpoint: mini remote"
+  else
+    d_ok "GPU inference ${C_DIM}(${GPU_NAME})${C_RESET}"
+  fi
   if [ "${DISK_FREE_GB:-0}" -lt 10 ]; then
     d_warn "${DISK_FREE_GB}GB free in ${HOME} — models need room"
   else

@@ -23,9 +23,19 @@ not helpful.
 
 ## The CPU cap
 
-On CPU, mini refuses to auto-select anything above `qwen2.5-coder:7b`, even with
-128GB of RAM. A 24B model on CPU produces a couple of tokens per second — it is
-technically running and practically useless for an interactive agent.
+On CPU, mini will not auto-select anything above `qwen3:4b-instruct`, however
+much RAM you have. Measured on an ordinary CPU box: `qwen2.5-coder:7b` generates
+about 2.5 tokens per second. It runs; it is not an interactive agent.
+
+What actually decides whether a local agent feels usable on CPU is
+time-to-first-token, and that is dominated by **prompt size, not parameter
+count** — see the context section below. A 4B model that answers beats a 14B one
+you gave up waiting for.
+
+`qwen3:4b-instruct` is the default because it wins on every axis that matters
+here: 2.5GB, 256k native context, tool calling trained in, and — being the
+`-instruct` variant — no thinking tokens. Plain `qwen3:4b` emits a reasoning
+block before every answer, which on CPU is latency you pay on every turn.
 
 Override it if you disagree:
 
@@ -37,16 +47,17 @@ mini model devstral:24b       # your box, your call
 
 `share/models.tsv`, curated 2026-07:
 
-| Model | Needs | Native context | Class | Why |
+| Model | Download | Needs | Native context | Why |
 |---|---|---|---|---|
-| `qwen3-coder:30b` | 20GB | 256k | agentic | MoE, ~3B active per token. Strongest local agentic coder. 24GB GPU. |
-| `devstral:24b` | 15GB | 128k | agentic | Mistral's SWE-agent model. Excellent multi-step tool use. |
-| `gpt-oss:20b` | 13GB | 128k | general | OpenAI open-weights. Strong tool calling, good generalist. |
-| `qwen2.5-coder:14b` | 9GB | 32k | coder | The 12GB-GPU sweet spot. |
-| `qwen2.5-coder:7b` | 5GB | 32k | coder | **The baseline.** Reliable tool calls on 8GB. |
-| `qwen2.5-coder:3b` | 3GB | 32k | coder | Small boxes. Simple edits and shell work. |
-| `qwen2.5-coder:1.5b` | 2GB | 32k | coder | Very small. Tool calls get shaky. |
-| `qwen2.5-coder:0.5b` | 1.2GB | 32k | coder | Last resort. Not dependable for agentic work. |
+| `qwen3-coder:30b` | 19GB | 21GB | 256k | MoE, ~3B active. Strongest local agentic coder. 24GB GPU. |
+| `devstral:24b` | 14GB | 16GB | 128k | Mistral's SWE-agent model. Excellent multi-step tool use. |
+| `gpt-oss:20b` | 13GB | 14GB | 128k | OpenAI open-weights. Strong tool calling. |
+| `qwen2.5-coder:14b` | 9GB | 11GB | 32k | Code-specialised mid-tier. 12GB-GPU sweet spot. |
+| `qwen2.5-coder:7b` | 4.7GB | 6.5GB | 32k | Code-specialised baseline. 8GB GPU. |
+| `qwen3:4b-instruct` | 2.5GB | 4GB | 256k | **The CPU default.** Best small all-rounder. |
+| `llama3.2:3b` | 2.0GB | 3GB | 128k | Small generalist, dependable tool calling. |
+| `qwen3:1.7b` | 1.4GB | 2.5GB | 40k | Tool calling still holds. Simple tasks. |
+| `qwen3:0.6b` | 522MB | 1.5GB | 40k | Runs anywhere. Hand-hold every step. |
 
 Sizes are approximate and include working KV cache, not just weights.
 `mini models --refresh` re-checks each entry against the ollama library so a
@@ -134,12 +145,25 @@ on top. `ollama list` shows everything; `ollama rm <model>` reclaims it.
 ## Using a model that is not in the registry
 
 ```bash
-mini model codellama:13b
+mini model granite4:3b
+mini model hf.co/unsloth/Qwen3-4B-Instruct-GGUF:Q4_K_M    # straight from HuggingFace
 ```
 
 mini warns that it is unknown, then tries anyway: pulls it, picks a context from
 your budget, builds the variant. The registry is a curated shortlist, not a
-whitelist.
+whitelist — anything `ollama pull` accepts works, including any GGUF on
+HuggingFace via the `hf.co/<user>/<repo>:<quant>` form.
+
+Before committing to one, check the two things that decide whether it can be an
+agent at all:
+
+```bash
+ollama show <model> | grep -A5 Capabilities     # must list "tools"
+ollama show <model> | grep 'context length'     # the real ceiling
+```
+
+No `tools` capability means no tool calling, which means it cannot run a single
+command — it will only talk about them.
 
 To make it permanent, add a row to `share/models.tsv` — keep the file ordered
 best → smallest, since selection takes the first row that fits.

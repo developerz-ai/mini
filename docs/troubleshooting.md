@@ -9,6 +9,42 @@ mini doctor
 Every failing check prints the exact command that fixes it. The rest of this
 page is for problems doctor cannot see.
 
+## It returns nothing at all, with no error
+
+The request timed out during prompt processing.
+
+Before a local model emits its first token it must read the entire prompt —
+opencode's system prompt, every tool schema, your `AGENTS.md`, your memories.
+That is several thousand tokens. A GPU chews through it in seconds. An older or
+busy CPU runs prefill at 20–40 tokens per second, so the same turn needs
+several minutes, and a default HTTP timeout kills the request part-way. Nothing
+is logged as an error — you just get an empty response.
+
+mini sets generous timeouts for exactly this, scaled to whether you are on GPU
+or CPU:
+
+```bash
+grep -A3 '"options"' ~/.cache/mini/opencode.json
+```
+
+CPU boxes get a 45-minute request timeout and a 10-minute gap allowance between
+streamed tokens. If you edited that file by hand and lost those values, restore
+them with:
+
+```bash
+mini setup
+```
+
+To confirm the model itself is fine, bypass opencode entirely:
+
+```bash
+curl -s http://127.0.0.1:11434/api/generate \
+  -d '{"model":"'"$(mini config | awk '/runtime model/{print $3}')"'","prompt":"say OK","stream":false}' \
+  | head -c 200
+```
+
+If that answers and `mini` does not, it is the timeout, not the model.
+
 ## The agent stops mid-task, or ignores its tools
 
 **Almost always the context window.** Check it:

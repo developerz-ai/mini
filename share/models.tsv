@@ -3,19 +3,30 @@
 #
 # id            <TAB> min_budget_mb <TAB> max_ctx <TAB> class <TAB> note
 #
-# min_budget_mb = memory the weights + a working KV cache realistically need.
-# max_ctx       = the model's NATIVE context. Do not raise it hoping for more:
-#                 ollama honours the architecture limit and silently runs at the
-#                 native size, so an inflated number here just makes mini lie.
-#                 Verify with: ollama show <model> | grep 'context length'
+# min_budget_mb = download size plus room for a working KV cache.
+# max_ctx       = the model's NATIVE context, verified with:
+#                   ollama show <model> | grep 'context length'
+#                 Do not inflate it. num_ctx above the architecture limit does
+#                 nothing — ollama silently runs at the native size, and mini
+#                 ends up reporting a context it does not have.
 #
-# Sizes are approximate. `mini models --refresh` re-checks availability.
+# Tool calling is the requirement, not benchmark scores: this agent's whole job
+# is run-command → read-output → decide. A model that drops tool calls on turn
+# six is worse than a smaller one that stays coherent. Verify with:
+#   ollama show <model>   → Capabilities must list "tools"
 #
-qwen3-coder:30b		20000	262144	agentic	MoE 30B with ~3B active — strongest local agentic coder. Wants a 24GB GPU.
-devstral:24b		15000	131072	agentic	Mistral's SWE-agent coder. Excellent multi-step tool use.
-gpt-oss:20b		13000	131072	general	OpenAI open-weights. Strong tool calling, good generalist.
-qwen2.5-coder:14b	9000	32768	coder	Solid mid-tier coder. The 12GB-GPU sweet spot.
-qwen2.5-coder:7b	5000	32768	coder	The dependable baseline. Reliable tool calls on 8GB.
-qwen2.5-coder:3b	3000	32768	coder	Small-box fallback. Fine for simple edits and shell work.
-qwen2.5-coder:1.5b	2000	32768	coder	Very small. Tool calls get shaky — expect to hand-hold it.
-qwen2.5-coder:0.5b	1200	32768	coder	Last resort. Not dependable for agentic work.
+# NO THINKING MODELS. Every entry here answers directly. A reasoning model burns
+# its output budget on a <think> block before saying anything, which on CPU is
+# minutes of latency per turn — and measured on qwen3:0.6b, it spent the entire
+# budget thinking and returned EMPTY content. Prefer -instruct variants; check a
+# candidate with:  ollama show <model>  → 'thinking' in Capabilities is a red
+# flag unless the tag is explicitly -instruct.
+#
+qwen3-coder:30b	21000	262144	agentic	MoE 30B with ~3B active — strongest local agentic coder. Wants a 24GB GPU.
+devstral:24b	16000	131072	agentic	Mistral's SWE-agent coder. Excellent multi-step tool use.
+gpt-oss:20b	14000	131072	general	OpenAI open-weights. Strong tool calling, good generalist.
+qwen2.5-coder:14b	11000	32768	coder	Code-specialised mid-tier. The 12GB-GPU sweet spot.
+qwen2.5-coder:7b	6500	32768	coder	Code-specialised baseline. Solid on an 8GB GPU.
+qwen3:4b-instruct	4000	262144	coder	Best small all-rounder: 2.5GB, 256k context, reliable tools, no thinking tax.
+llama3.2:3b	3000	131072	general	Small generalist with dependable tool calling.
+llama3.2:1b	2000	131072	small	1.3GB. Non-thinking, still calls tools. Simple tasks only.

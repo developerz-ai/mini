@@ -23,12 +23,16 @@ Everything runs on your machine. Nothing leaves it.
 
 ## Why
 
-You spin up a fresh VPS. You want docker, a firewall that will not lock you out,
-your dotfiles, a couple of services. Normally that is an hour of tabbing between
-a terminal and six documentation pages.
+You just installed Linux on a laptop. Or spun up a fresh VPS. Either way you
+want docker, your toolchain, a firewall that will not lock you out, a couple of
+services — and normally that is an hour of tabbing between a terminal and six
+documentation pages.
 
 Or something breaks at 2am and you start the same ritual — `systemctl status`,
 `journalctl`, `df -h`, guess, repeat.
+
+Same tool for both: a new laptop, a dev machine, a VPS, a dedicated box. If it
+runs Debian or Ubuntu, mini works there.
 
 `mini` is a small agent that does that for you, on the box, with a model running
 locally. It is deliberately **a thin wrapper**: opencode is the agent runtime,
@@ -150,17 +154,63 @@ budget: VRAM minus 1GB on a GPU, 60% of RAM on CPU. On CPU it caps at 7B, since
 anything larger is too slow to be interactive — override with `mini model <id>`
 if you disagree.
 
-| Model | Wants | Context | For |
+| Model | Size | Context | For |
 |---|---|---|---|
-| `qwen3-coder:30b` | 20GB | 256k | Best local agentic coder. 24GB GPU. |
-| `devstral:24b` | 15GB | 128k | SWE-agent tuned, excellent multi-step tool use. |
+| `qwen3-coder:30b` | 19GB | 256k | Best local agentic coder. 24GB GPU. |
+| `devstral:24b` | 14GB | 128k | SWE-agent tuned, excellent multi-step tool use. |
 | `gpt-oss:20b` | 13GB | 128k | Strong tool calling, good generalist. |
-| `qwen2.5-coder:14b` | 9GB | 32k | The 12GB-GPU sweet spot. |
-| `qwen2.5-coder:7b` | 5GB | 32k | **The dependable baseline.** Reliable tool calls on 8GB. |
-| `qwen2.5-coder:3b` | 3GB | 32k | Small boxes. Simple edits and shell work. |
-| `qwen2.5-coder:1.5b` | 2GB | 32k | Very small. Expect to hand-hold it. |
+| `qwen2.5-coder:14b` | 9GB | 32k | Code-specialised. The 12GB-GPU sweet spot. |
+| `qwen2.5-coder:7b` | 4.7GB | 32k | Code-specialised baseline. 8GB GPU. |
+| `qwen3:4b-instruct` | 2.5GB | 256k | **The CPU default.** Best small all-rounder. |
+| `llama3.2:3b` | 2.0GB | 128k | Small generalist, dependable tool calling. |
+| `qwen3:1.7b` | 1.4GB | 40k | Simple tasks. Tool calling still holds. |
+| `qwen3:0.6b` | 522MB | 40k | Runs anywhere. Hand-hold every step. |
 
-Curated 2026-07 — `mini models --refresh` re-checks availability upstream.
+Curated 2026-07, every context figure verified with `ollama show`.
+`mini models --refresh` re-checks availability upstream.
+
+Two things decide whether a model can do this job, and neither is a benchmark
+score:
+
+- **Tool calling.** The work is run-command → read-output → decide. A model that
+  drops tool calls on turn six is worse than a smaller one that stays coherent.
+- **No thinking.** Reasoning models spend their output budget on a `<think>`
+  block before saying anything. Measured here, `qwen3:0.6b` used the *entire*
+  budget thinking and returned empty content. Every registry entry answers
+  directly; that is why the default is `qwen3:4b-instruct` and not plain
+  `qwen3:4b`.
+
+Check a candidate before trusting it:
+
+```bash
+ollama show <model> | grep -A5 Capabilities   # needs "tools"
+ollama show <model> | grep 'context length'   # the real ceiling
+```
+
+Anything ollama can pull works, including GGUFs straight from HuggingFace:
+
+```bash
+mini model hf.co/unsloth/Qwen3-4B-Instruct-GGUF:Q4_K_M
+```
+
+## No GPU? Move only the inference
+
+Local models on CPU are slow — a few tokens per second, and minutes on the first
+turn of a session while the prompt is processed. If that is not workable, point
+mini at any OpenAI-compatible endpoint. The brain, tools, memory and slash
+commands stay exactly the same; only where the tokens come from changes.
+
+```bash
+mini remote https://openrouter.ai/api/v1 qwen/qwen3-coder sk-or-...
+mini remote                       # interactive, hidden key prompt
+mini local                        # back to the local model
+```
+
+Works with OpenRouter, Groq, Together, DeepInfra, a vLLM box on your LAN, or
+another machine's ollama (`http://192.168.1.10:11434/v1`, no key needed).
+
+The key is stored `0600` in `~/.cache/mini/api-key`, and the generated config is
+`0600` too since it embeds the key.
 
 ## Sudo — the thing that decides whether it works at all
 

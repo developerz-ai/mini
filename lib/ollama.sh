@@ -106,10 +106,14 @@ ollama_start() {
   # on a CPU box, make both requests crawl. Serialise them instead.
   # KEEP_ALIVE=30m: the default 5m unloads the model between turns, and
   # reloading several GB from disk on every tool call is the whole session.
+  # FLASH_ATTENTION + q8_0 KV halves the memory a context window costs, which
+  # is what makes 64k-128k affordable on an ordinary box instead of 32k.
   OLLAMA_HOST="$OLLAMA_HOST_ADDR" \
   OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}" \
   OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}" \
   OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}" \
+  OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-1}" \
+  OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q8_0}" \
     nohup ollama serve >>"$OLLAMA_LOG" 2>&1 &
   printf '%s\n' "$!" > "$OLLAMA_PIDFILE"
   ollama_wait 30 || die "ollama did not start — check ${OLLAMA_LOG}"
@@ -123,7 +127,9 @@ ollama_write_systemd_dropin() {
   local want='[Service]
 Environment="OLLAMA_NUM_PARALLEL=1"
 Environment="OLLAMA_MAX_LOADED_MODELS=1"
-Environment="OLLAMA_KEEP_ALIVE=30m"'
+Environment="OLLAMA_KEEP_ALIVE=30m"
+Environment="OLLAMA_FLASH_ATTENTION=1"
+Environment="OLLAMA_KV_CACHE_TYPE=q8_0"'
 
   # Bind to loopback unless the user deliberately pointed mini elsewhere.
   # An ollama listening on 0.0.0.0 is an unauthenticated endpoint that will run

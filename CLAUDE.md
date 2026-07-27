@@ -72,14 +72,31 @@ there; never read state from the install root.
    hangs. Without passwordless sudo the agent can read but not act — which is
    why `mini sudo` exists and why doctor treats it as a hard failure.
 4. **ollama tuning.** `OLLAMA_NUM_PARALLEL=1` (opencode fires a title request
-   alongside the main one; two slots double KV and thrash on CPU) and
-   `OLLAMA_KEEP_ALIVE=30m` (the 5m default unloads several GB between turns).
-   Applied via a systemd drop-in, or env vars when mini owns the process.
+   alongside the main one; two slots double KV and thrash on CPU),
+   `OLLAMA_KEEP_ALIVE=30m` (the 5m default unloads several GB between turns),
+   and `OLLAMA_FLASH_ATTENTION=1` + `OLLAMA_KV_CACHE_TYPE=q8_0` (halves what a
+   context window costs, which is what makes 128k affordable). Applied via a
+   systemd drop-in, or env vars when mini owns the process.
+5. **Request timeouts.** `timeout`/`chunkTimeout` in the provider options. The
+   defaults kill a cold CPU request mid-prefill and the symptom is an empty
+   response with nothing logged — it reads as a broken model. Measured: a
+   5,839-token prompt took 185s to prefill at ~31 tok/s.
+6. **Prompt size is the CPU latency budget.** Every enabled tool ships its
+   schema on every request. Trimming opencode's built-ins to bash/read/write/
+   edit plus tightening the prompts took a request from 9,300 to 5,838 tokens —
+   about two minutes off every cold turn. Check the real number in the ollama
+   journal: `task.n_tokens`.
 
 ## Changing things
 
 - **New model**: a row in `share/models.tsv`. Keep it ordered best → smallest;
-  selection takes the first row that fits. Re-date the header comment.
+  selection takes the first row that fits. Re-date the header comment. Verify
+  both facts before adding it — `ollama show <m>` must list `tools`, and the
+  context column must be its real `context length`. **No reasoning models**:
+  they spend the output budget on a `<think>` block, and on CPU that is minutes
+  per turn (qwen3:0.6b returned empty content entirely). Prefer `-instruct`.
+- The registry is tab-separated and hand-aligned; `models_rows` squeezes
+  repeated tabs so a double tab cannot shift every field after it.
 - **New platform**: see `platforms/README.md`. Two files, no registry to edit.
 - **New tool**: bash script in `share/tools/`, TS wrapper in
   `share/opencode-tools/`, a row in the table in `share/prompts/base.md`, and a

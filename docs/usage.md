@@ -138,6 +138,25 @@ by hand — they are plain markdown and get loaded into every session.
 Save facts, not events. "nginx config lives in /etc/nginx/sites-enabled" earns
 its place in the context window; "restarted nginx on Tuesday" does not.
 
+## External inference
+
+When the box cannot run a model fast enough, move only the inference:
+
+```bash
+mini remote https://openrouter.ai/api/v1 qwen/qwen3-coder sk-or-...
+mini remote                  # interactive; the key prompt is hidden
+mini local                   # back to the local model
+```
+
+Anything OpenAI-compatible: OpenRouter, Groq, Together, DeepInfra, a vLLM server
+on your LAN, or another machine's ollama at `http://host:11434/v1` (no key).
+
+Everything else is unchanged — same `AGENTS.md`, same tools, same memory, same
+slash commands. `mini doctor` shows which mode you are in.
+
+The key lands `0600` in `~/.cache/mini/api-key`, and `opencode.json` becomes
+`0600` as well because it embeds the key.
+
 ## Changing the model
 
 ```bash

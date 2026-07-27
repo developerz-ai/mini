@@ -59,6 +59,9 @@ ${C_BOLD}COMMANDS${C_RESET}
   setup            install/repair everything, pick a model
   doctor           check the install and say what to fix
   sudo             enable passwordless sudo so the agent can actually act
+  remote [url model [key]]
+                   use an external OpenAI-compatible endpoint instead of local
+  local            switch back to the local model
   models           list models, what fits this box, what is pulled
   model <id|auto>  switch model (pulls it, rebuilds the context variant)
   remember <text>  save a durable fact about this machine
@@ -117,15 +120,9 @@ cmd_setup() {
   ollama_tune
 
   step "Model"
-  local base recommended ctx variant
-  recommended=$(models_recommend)
+  local base ctx variant
   base="${MINI_FORCE_MODEL:-}"
-  if [ -z "$base" ]; then
-    say "  recommended for this box: ${C_BOLD}${recommended}${C_RESET}"
-    dim "  $(models_field "$recommended" 5)"
-    say ''
-    base=$(ask "model to install" "$recommended")
-  fi
+  [ -n "$base" ] || base=$(models_choose)
   models_known "$base" || warn "'${base}' is not in the registry — trying it anyway"
 
   ctx=$(models_pick_ctx "$base")
@@ -142,6 +139,15 @@ cmd_setup() {
   say ''
   ok "${C_BOLD}ready${C_RESET} — run ${C_BOLD}mini${C_RESET} in any directory"
   dim "  try: mini \"what is wrong with this machine\""
+
+  if [ "${ACCEL:-cpu}" = 'cpu' ]; then
+    say ''
+    warn "no GPU here, so inference is on CPU"
+    dim "  The first turn of a session spends minutes processing the prompt;"
+    dim "  later turns are quicker. If that is too slow, keep everything else"
+    dim "  and move only inference off the box:"
+    dim "    mini remote https://openrouter.ai/api/v1 <model> <api-key>"
+  fi
 }
 
 # Copy AGENTS.md, tools and the host memory into MINI_HOME. Never clobbers a
@@ -333,6 +339,100 @@ cmd_sudo() {
   dim "  undo with:  sudo rm ${file}"
 }
 
+# Point mini at someone else's GPU.
+#
+# Any OpenAI-compatible endpoint. Everything that makes mini useful — the brain,
+# the tools, the memory, the slash commands — is unchanged; only inference moves
+# off this box. This is the right answer for a machine that cannot run a model
+# at a tolerable speed, which is most machines without a GPU.
+cmd_remote() {
+  detect_all
+
+  # Non-interactive form:  mini remote <url> <model> [api-key]
+  # Handy for cloud-init and for anyone who already knows what they want.
+  if [ "$#" -ge 2 ]; then
+    local r_url="$1" r_model="$2" r_key="${3:-}" r_ctx
+    r_ctx=$(cfg_get MINI_CTX); [ -n "$r_ctx" ] || r_ctx=131072
+    ensure_dir "$MINI_HOME"
+    ( umask 077; printf '%s\n' "$r_key" > "${MINI_HOME}/api-key" )
+    chmod 600 "${MINI_HOME}/api-key"
+    cfg_set MINI_PROVIDER remote
+    cfg_set MINI_REMOTE_URL "$r_url"
+    cfg_set MINI_REMOTE_MODEL "$r_model"
+    cfg_set MINI_CTX "$r_ctx"
+    install_state_files
+    opencode_write_config "$r_model" "$r_ctx"
+    ok "using ${C_BOLD}${r_model}${C_RESET} via ${r_url}"
+    return 0
+  fi
+
+  step "External inference"
+  say "  Any OpenAI-compatible endpoint: OpenRouter, Groq, Together, DeepInfra,"
+  say "  a vLLM server on your LAN, or another machine's ollama."
+  say ''
+  dim "  OpenRouter   https://openrouter.ai/api/v1"
+  dim "  Groq         https://api.groq.com/openai/v1"
+  dim "  Together     https://api.together.xyz/v1"
+  dim "  remote box   http://192.168.1.10:11434/v1"
+  say ''
+
+  local url model key ctx
+  url=$(ask "API base URL (must end in /v1)" "$(cfg_get MINI_REMOTE_URL)")
+  [ -n "$url" ] || die "no URL given"
+
+  model=$(ask "model id" "$(cfg_get MINI_REMOTE_MODEL)")
+  [ -n "$model" ] || die "no model given"
+
+  ctx=$(ask "context window" "131072")
+
+  say ''
+  say "  API key — leave empty for an endpoint that does not need one"
+  printf '%s' "${C_CYAN}?${C_RESET} key: " >&2
+  if [ -t 0 ]; then
+    read -rs key || key=''
+    printf '\n' >&2
+  else
+    read -r key || key=''
+  fi
+
+  ensure_dir "$MINI_HOME"
+  ( umask 077; printf '%s\n' "$key" > "${MINI_HOME}/api-key" )
+  chmod 600 "${MINI_HOME}/api-key"
+
+  cfg_set MINI_PROVIDER remote
+  cfg_set MINI_REMOTE_URL "$url"
+  cfg_set MINI_REMOTE_MODEL "$model"
+  cfg_set MINI_CTX "$ctx"
+
+  install_state_files
+  opencode_write_config "$model" "$ctx"
+
+  say ''
+  ok "using ${C_BOLD}${model}${C_RESET} via ${url}"
+  dim "  key stored 0600 in ${MINI_HOME}/api-key"
+  dim "  back to local anytime:  mini local"
+}
+
+# Return to the local model.
+cmd_local() {
+  detect_all
+  local base; base=$(cfg_get MINI_BASE_MODEL)
+  cfg_set MINI_PROVIDER local
+  if [ -z "$base" ]; then
+    warn "no local model set up yet"
+    cmd_setup
+    return $?
+  fi
+  ollama_start
+  local ctx variant
+  ctx=$(models_pick_ctx "$base")
+  variant=$(models_ensure "$base" "$ctx" | tail -n1)
+  cfg_set MINI_MODEL "$variant"
+  cfg_set MINI_CTX "$ctx"
+  opencode_write_config "$variant" "$ctx"
+  ok "back to local: ${C_BOLD}${base}${C_RESET}"
+}
+
 cmd_remember() {
   local text="$*"
   [ -n "$text" ] || die "usage: mini remember \"postgres runs in docker on port 5433\""
@@ -407,6 +507,8 @@ cmd_update() {
 # Everything the agent does needs a live server and a configured model.
 ensure_ready() {
   [ -f "${MINI_HOME}/opencode.json" ] || die "mini is not set up yet — run: mini setup"
+  # Remote inference needs no local server.
+  [ "$(cfg_get MINI_PROVIDER)" = 'remote' ] && return 0
   ollama_up || ollama_start
 }
 
@@ -430,6 +532,8 @@ main() {
     models)    shift; detect_all; models_list "${1:-}" ;;
     model)     shift; cmd_model "${1:-}" ;;
     sudo)      shift; cmd_sudo ;;
+    remote)    shift; cmd_remote "$@" ;;
+    local)     shift; cmd_local ;;
     remember)  shift; cmd_remember "$@" ;;
     memories)  shift; cmd_memories ;;
     serve)     shift
