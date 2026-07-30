@@ -122,3 +122,9 @@ Test on a box with no GPU and on one with a GPU — the selection paths differ.
 `README.md` is for users. `docs/` covers usage, architecture, models, tools and
 prompts. Update the relevant one in the same change; a stale doc about a wrapper
 this small is worse than none.
+
+## Note
+
+Do not use git worktrees — work directly in this checkout. If a task is big
+enough to need subagents, run them as a team in this same checkout: split the
+work into disjoint pieces so no two agents touch the same files.
