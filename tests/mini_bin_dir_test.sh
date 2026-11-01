@@ -239,6 +239,27 @@ resolved=$(PATH="$(launch_path opencode_launch)" "$BASH_BIN" -c 'command -v mini
 rm -f "${HOME_DIR}/.bashrc" "${HOME_DIR}/.profile"
 ok "a shell profile in HOME is not read"
 
+# Bash 5.2 treats unquoted & in a pattern replacement as the matched text.
+# Generate and execute /remember from an ampersand-containing install root.
+(
+  shopt -s patsub_replacement 2>/dev/null || : # unavailable before Bash 5.2
+  export MINI_ROOT="${TMP}/mini&test"
+  mkdir -p "${MINI_ROOT}/bin"
+  printf '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%%s\\n" "$@"\n' > "${MINI_ROOT}/bin/mini"
+  chmod 0755 "${MINI_ROOT}/bin/mini"
+  special_config="${TMP}/ampersand-config.json"
+  { printf '{\n'; opencode_command_block; printf '}\n'; } > "$special_config"
+  special_template=$(remember_template "$special_config")
+  special_template=$(printf '%s' "$special_template" | sed 's/\\"/"/g; s/\\\\/\\/g')
+  special_command=$(printf '%s' "$special_template" | sed 's/^.*running: //; s/\. Then confirm.*$//')
+  special_command=${special_command//\$ARGUMENTS/ampersand-path-fact}
+  out=$("$BASH_BIN" -c "$special_command" 2>&1) \
+    || fail "ampersand install: /remember failed: ${out}"
+  [ "$out" = $'remember\nampersand-path-fact' ] \
+    || fail "ampersand install: wrong CLI arguments: ${out}"
+) || fail "ampersand install regression"
+ok "the /remember command executes the CLI in an ampersand-containing install root"
+
 # The fallback: when the CLI cannot be located at all, the /remember command
 # falls back to the bare `mini` — and the config it lands in stays valid.
 FB_HOME="${TMP}/mini-home-fallback"

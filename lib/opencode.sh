@@ -126,7 +126,7 @@ CMDS
   # the CLI cannot be located, fall back to the bare command.
   if cli=$(mini_cli_path); then
     cli_json=$(json_escape "$(shell_quote_path "$cli")")
-    block="${block//__MINI_CLI__/$cli_json}"
+    block="${block//__MINI_CLI__/"$cli_json"}"
   else
     block="${block//__MINI_CLI__/mini}"
   fi
