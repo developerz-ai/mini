@@ -7,6 +7,10 @@
 
 OPENCODE_BIN_DIR="${HOME}/.opencode/bin"
 
+# The one command that configures remote inference. Every "remote is not set
+# up" failure names it, so the fix is never a guess.
+MINI_REMOTE_FIX='mini remote <url> <model> [key]'
+
 opencode_bin() {
   if has opencode; then command -v opencode
   elif [ -x "${OPENCODE_BIN_DIR}/opencode" ]; then printf '%s\n' "${OPENCODE_BIN_DIR}/opencode"
@@ -161,17 +165,68 @@ except Exception as e: print('   ', e)" "$file" 2>/dev/null
   die "this is a bug in mini — please report it"
 }
 
+# Does the generated config already describe this remote setup?
+#
+# `mini remote` writes the config keys before it writes opencode.json, so a
+# write that dies half way leaves the two out of step: the launch names
+# mini-remote/<model> while the config still defines the local ollama
+# provider. opencode then answers "model not found" — a broken-model symptom
+# for a broken-config cause.
+opencode_remote_config_current() {
+  local url="$1" model="$2" out="${MINI_HOME}/opencode.json"
+  [ -f "$out" ] || return 1
+  grep -Fq '"mini-remote": {' "$out" || return 1
+  grep -Fq "\"model\": \"mini-remote/$(json_escape "$model")\"" "$out" || return 1
+  grep -Fq "\"baseURL\": \"$(json_escape "$url")\"" "$out" || return 1
+  return 0
+}
+
+# The provider/model opencode is launched with.
+#
+# The generated config decides which provider is live: `ollama` for local
+# inference, `mini-remote` for an external OpenAI-compatible endpoint. The
+# launch must name the SAME provider/model the config was written with —
+# otherwise opencode looks for a model that does not exist and fails with
+# something that reads like a broken model rather than a broken config.
+#
+# Remote mode needs no local model at all: MINI_MODEL is not consulted.
+opencode_model_ref() {
+  local url model
+  if [ "$(cfg_get MINI_PROVIDER)" = 'remote' ]; then
+    url=$(cfg_get MINI_REMOTE_URL)
+    model=$(cfg_get MINI_REMOTE_MODEL)
+    [ -n "$url" ]   || die "no remote URL configured — run: ${MINI_REMOTE_FIX}"
+    [ -n "$model" ] || die "no remote model configured — run: ${MINI_REMOTE_FIX}"
+    # The config has to declare the provider/model the launch names. If the
+    # two are out of step, rewrite the config instead of letting opencode
+    # fail on a model it was never told about.
+    #
+    # Its output goes to stderr: stdout here is the ref, and the caller
+    # captures it.
+    if ! opencode_remote_config_current "$url" "$model"; then
+      opencode_write_remote_config >&2 \
+        || die "could not write ${MINI_HOME}/opencode.json — run: ${MINI_REMOTE_FIX}"
+    fi
+    printf '%s\n' "mini-remote/${model}"
+  else
+    model=$(cfg_get MINI_MODEL)
+    [ -n "$model" ] || die "no model configured — run: mini setup"
+    printf '%s\n' "ollama/${model}"
+  fi
+}
+
 # Launch opencode against mini's config, in the caller's current directory.
 #
 # Yolo (--auto) is the default: this is a local model on your own box and
 # approving every `ls` kills the point. `mini --safe` restores the prompts.
 opencode_launch() {
-  local bin model
+  local bin ref
   bin=$(opencode_bin) || die "opencode is not installed — run: mini setup"
-  model=$(cfg_get MINI_MODEL)
-  [ -n "$model" ] || die "no model configured — run: mini setup"
+  # `die` inside the substitution only ends the subshell, so carry the
+  # failure out explicitly instead of relying on errexit.
+  ref=$(opencode_model_ref) || exit 1
 
-  local -a flags=(-m "ollama/${model}")
+  local -a flags=(-m "$ref")
   [ "${MINI_SAFE:-0}" = '1' ] || flags+=(--auto)
 
   OPENCODE_CONFIG="${MINI_HOME}/opencode.json" \
@@ -194,8 +249,8 @@ opencode_write_remote_config() {
   ctx=$(cfg_get MINI_CTX); [ -n "$ctx" ] || ctx=131072
   key=$(cat "${MINI_HOME}/api-key" 2>/dev/null || printf '')
 
-  [ -n "$url" ] || die "no remote URL configured — run: mini remote"
-  [ -n "$model" ] || die "no remote model configured — run: mini remote"
+  [ -n "$url" ] || die "no remote URL configured — run: ${MINI_REMOTE_FIX}"
+  [ -n "$model" ] || die "no remote model configured — run: ${MINI_REMOTE_FIX}"
 
   out_tokens=$(( ctx / 8 ))
   [ "$out_tokens" -gt 16384 ] && out_tokens=16384
@@ -258,10 +313,9 @@ JSON
 # can run commands on the box.
 opencode_web() {
   local mode="$1"; shift
-  local bin model host='127.0.0.1' pw
+  local bin ref host='127.0.0.1' pw
   bin=$(opencode_bin) || die "opencode is not installed — run: mini setup"
-  model=$(cfg_get MINI_MODEL)
-  [ -n "$model" ] || die "no model configured — run: mini setup"
+  ref=$(opencode_model_ref) || exit 1
 
   if [ "${1:-}" = '--lan' ]; then
     host='0.0.0.0'
@@ -282,17 +336,16 @@ opencode_web() {
   OLLAMA_HOST="$OLLAMA_HOST_ADDR" \
   OPENCODE_SERVER_PASSWORD="$pw" \
   PATH="${MINI_HOME}/tools:${PATH}" \
-    exec "$bin" "$mode" --hostname "$host" -m "ollama/${model}" "$@"
+    exec "$bin" "$mode" --hostname "$host" -m "$ref" "$@"
 }
 
 # One-shot: `mini "why is nginx down"`.
 opencode_run() {
-  local bin model
+  local bin ref
   bin=$(opencode_bin) || die "opencode is not installed — run: mini setup"
-  model=$(cfg_get MINI_MODEL)
-  [ -n "$model" ] || die "no model configured — run: mini setup"
+  ref=$(opencode_model_ref) || exit 1
 
-  local -a flags=(run -m "ollama/${model}")
+  local -a flags=(run -m "$ref")
   [ "${MINI_SAFE:-0}" = '1' ] || flags+=(--auto)
 
   OPENCODE_CONFIG="${MINI_HOME}/opencode.json" \

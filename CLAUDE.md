@@ -109,6 +109,8 @@ read runtime state in the install root.
 ## Testing
 
 There is no test framework — the checks are plain bash scripts you run by hand.
+Provider and launch selection are covered by `tests/test_provider.sh` — run it
+first.
 
 ```bash
 bash tests/remote_key_test.sh    # offline, no network, no framework
@@ -117,13 +119,14 @@ bash tests/remote_key_test.sh    # offline, no network, no framework
 `tests/remote_key_test.sh` pins one thing: the API-key prompt of `mini remote`.
 With `MINI_YES=1` the prompt is skipped, nothing is read from stdin, and an
 empty `0600` key file is written. Without `MINI_YES` the prompt still reads the
-key from stdin and that key lands in the `0600` key file. Nothing else is
-covered. It stubs the host GPU probes, so the result does not depend on the
-machine it runs on.
+key from stdin and that key lands in the `0600` key file. This script covers
+only that prompt. It stubs the host GPU probes, so the result does not depend
+on the machine it runs on.
 
-The wrapper itself is checked by hand:
+The remaining wrapper behavior is checked by hand:
 
 ```bash
+bash tests/test_provider.sh                           # provider/launch selection
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
 shellcheck bin/mini lib/*.sh                          # if available
 mini doctor                                           # must be clean

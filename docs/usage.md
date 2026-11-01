@@ -114,6 +114,23 @@ mini web --lan       # reachable from your network, still password-protected
 mini headless        # a server to attach to from another machine
 ```
 
+Both `mini web` and `mini headless` follow the configured provider:
+
+| Mode | What opencode is launched with |
+|---|---|
+| default | the local ollama model, `ollama/<model>` |
+| after `mini remote` | the remote endpoint, `mini-remote/<model>` |
+
+A remote-only box needs no local model: nothing is pulled, and ollama does not
+have to be running. If the remote setup is incomplete — no URL or no model —
+the launch stops before opencode starts and names the command that fixes it:
+
+```
+no remote model configured — run: mini remote <url> <model> [key]
+```
+
+`mini doctor` reports the same gap as a failure and prints that fix command.
+
 The password is 32 random characters, generated on first use and stored `0600`
 in `$MINI_HOME/secret`. It exists because this endpoint can run commands on
 the machine — unauthenticated, it would be a remote shell for anyone who can
@@ -160,6 +177,9 @@ still checks the host, API-key permissions, opencode, tools, server-password
 permissions and disk/memory budget. It skips local Ollama installation, server
 and binding checks, local model presence/context/recommendations, and GPU/CPU
 inference-speed advice. No local model or GPU is required.
+
+In remote mode there is no local model to set up — `mini web` and `mini headless`
+use the remote endpoint as well (see [Browser UI](#browser-ui-and-remote-access)).
 
 Remote inference moves model execution, not opencode or the tools: those still
 run on this host and need resources. Low disk space or a small detected memory
