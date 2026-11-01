@@ -94,9 +94,12 @@ ollama_start() {
   if ollama_systemd_managed; then
     info "starting ollama (systemd)"
     ollama_write_systemd_dropin
-    sudo systemctl start ollama >/dev/null 2>&1 || true
-    ollama_wait 30 && return 0
-    warn "systemd unit did not come up — falling back to a user process"
+    if _mini_sudo systemctl start ollama >/dev/null 2>&1; then
+      ollama_wait 30 && return 0
+      warn "systemd unit did not come up — falling back to a user process"
+    else
+      warn "systemctl start ollama failed — noninteractive privileges may be unavailable; optionally run: mini sudo — falling back to a user process"
+    fi
   fi
 
   info "starting ollama"
