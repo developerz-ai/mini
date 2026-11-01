@@ -103,13 +103,22 @@ for i, (url, title) in enumerate(hits, 1):
 print("read one with:  webfetch <url>")
 '
 else
-  # No python3: crude but functional.
+  # No python3: URL-only extraction. Drain input even after reaching COUNT;
+  # closing the pipe early can fail upstream under pipefail. No matches is OK.
   printf 'results for: %s\n\n' "$QUERY"
-  printf '%s' "$html" \
-    | grep -oE "<a[^>]*href=[\"'][^\"']+[\"'][^>]*result-link" \
-    | grep -oE "href=[\"'][^\"']+" \
-    | sed "s/^href=[\"']//" \
-    | head -n "$COUNT" \
-    | awk '{printf "%d. %s\n", NR, $0}'
+  printf '%s' "$html" | awk -v limit="$COUNT" '
+    {
+      rest = $0
+      while (match(rest, /<a[^>]*href=["\047][^"\047]+["\047][^>]*result-link/)) {
+        tag = substr(rest, RSTART, RLENGTH)
+        rest = substr(rest, RSTART + RLENGTH)
+        while (match(tag, /href=["\047][^"\047]+/)) {
+          url = substr(tag, RSTART + 6, RLENGTH - 6)
+          tag = substr(tag, RSTART + RLENGTH)
+          if (++n <= limit) printf "%d. %s\n", n, url
+        }
+      }
+    }
+  '
   printf '\nread one with:  webfetch <url>\n'
 fi

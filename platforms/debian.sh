@@ -17,7 +17,7 @@ platform_supported() { [ "${OS_PLATFORM:-}" = 'debian' ]; }
 # sudo only when we are not already root, and only when we actually need it.
 _sudo() {
   if [ "$(id -u)" -eq 0 ]; then "$@"
-  elif has sudo; then sudo "$@"
+  elif has sudo; then sudo -n "$@"
   else die "need root for: $* — install sudo or run mini as root"
   fi
 }
@@ -31,8 +31,8 @@ platform_install_pkgs() {
   [ "${#missing[@]}" -eq 0 ] && return 0
 
   info "installing: ${missing[*]}"
-  _sudo apt-get update -qq || warn "apt update failed — continuing with the cache"
-  DEBIAN_FRONTEND=noninteractive _sudo apt-get install -y -qq "${missing[@]}" \
+  _sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq || warn "apt update failed — continuing with the cache"
+  _sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}" \
     || die "apt could not install: ${missing[*]}"
 }
 

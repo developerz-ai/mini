@@ -27,6 +27,7 @@ it.
 | `share/opencode-tools/*.ts` | TS definitions that expose those to opencode |
 | `share/models.tsv` | The model registry. Dated. |
 | `install.sh` | curl-to-bash entry point |
+| `tests/` | Offline bash checks. No framework — run them by hand. |
 
 Runtime state is `~/.cache/mini/` (`$MINI_HOME`). The sole program-file exception
 is `$MINI_HOME/tools`, where mini installs shipped scripts copied from
@@ -107,11 +108,25 @@ read runtime state in the install root.
 
 ## Testing
 
-mini is a wrapper around two binaries, not a framework, but it does carry shell
-tests under `tests/`. Run the test script first, then the manual checks:
+mini is a wrapper around two binaries, not a framework, but it does carry plain
+bash tests under `tests/`. Run the offline test scripts first, then the manual
+checks:
 
 ```bash
-bash tests/init_test.sh                               # init detection + doctor Init step
+bash tests/init_test.sh          # init detection + doctor Init step
+bash tests/remote_key_test.sh    # offline, no network, no framework
+```
+
+`tests/remote_key_test.sh` pins one thing: the API-key prompt of `mini remote`.
+With `MINI_YES=1` the prompt is skipped, nothing is read from stdin, and an
+empty `0600` key file is written. Without `MINI_YES` the prompt still reads the
+key from stdin and that key lands in the `0600` key file. Nothing else is
+covered by this script. It stubs the host GPU probes, so the result does not depend on the
+machine it runs on.
+
+The wrapper itself is also checked by hand:
+
+```bash
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
 shellcheck bin/mini lib/*.sh                          # if available
 mini doctor                                           # must be clean

@@ -23,9 +23,14 @@ journalctl -p err -b --no-pager | tail -50
 df -h; df -i                           # full disk AND full inodes
 free -h                                # memory, swap
 uptime                                 # load vs nproc
-dmesg -T --level=err,warn | tail -30   # OOM, disk, hardware
+sudo -n dmesg -T --level=err,warn       # OOM, disk, hardware
 ss -tulpn                              # what listens
 ```
+
+If kernel reads fail, try `journalctl -k -b --no-pager -p warning` (use
+`sudo -n` if restricted). Keep access errors visible; never infer read success
+from `tail`'s exit status. Denied/unavailable logs mean unknown evidence, not
+"no kernel errors".
 
 Usual causes, in the order they actually occur: disk full → inodes full → OOM
 kill → config typo → permission denial → DNS → firewall.

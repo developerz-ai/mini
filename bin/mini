@@ -393,13 +393,20 @@ cmd_remote() {
   ctx=$(ask "context window" "131072")
 
   say ''
-  say "  API key — leave empty for an endpoint that does not need one"
-  printf '%s' "${C_CYAN}?${C_RESET} key: " >&2
-  if [ -t 0 ]; then
-    read -rs key || key=''
-    printf '\n' >&2
+  if [ "${MINI_YES:-0}" = "1" ]; then
+    # Unattended: never block on stdin for a secret. An empty key is the
+    # same thing the 2-argument form stores when no key is given.
+    key=''
+    dim "  MINI_YES=1 — no API key was read, an empty key was stored"
   else
-    read -r key || key=''
+    say "  API key — leave empty for an endpoint that does not need one"
+    printf '%s' "${C_CYAN}?${C_RESET} key: " >&2
+    if [ -t 0 ]; then
+      read -rs key || key=''
+      printf '\n' >&2
+    else
+      read -r key || key=''
+    fi
   fi
 
   ensure_dir "$MINI_HOME"

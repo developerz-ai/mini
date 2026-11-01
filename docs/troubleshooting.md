@@ -270,7 +270,19 @@ never built or was removed:
 mini setup
 ```
 
-If ollama is running under systemd and mini cannot start it:
+For systemd startup, mini runs `systemctl start ollama` directly as root, or
+with `sudo -n` as a non-root user. It never prompts for a password. If the
+command fails, mini prints a warning on stderr and immediately falls back to a
+user process, without waiting for the failed service start. If noninteractive
+privileges are unavailable, `mini sudo` is an optional remedy to grant
+passwordless sudo; it is not required for the user-process fallback.
+
+A successful systemd start is still checked for readiness; if the service does
+not become ready, mini warns and falls back to a user process too. If that
+process also fails to become ready, the fatal error points to
+`$MINI_HOME/logs/ollama.log` (normally `~/.cache/mini/logs/ollama.log`).
+
+If mini cannot start the systemd service, inspect it manually:
 
 ```bash
 sudo systemctl status ollama
@@ -323,10 +335,15 @@ mini setup
 
 Full removal:
 
+Run `ollama list` to identify installed model names. The removal command below
+is a 32k example: substitute your installed mini variant and base model names,
+and remove only models you no longer need.
+
 ```bash
+ollama list
 rm -rf ~/.cache/mini ~/.local/share/mini ~/.local/bin/mini
 rm -f ~/.config/opencode/tools/mini_*.ts
-ollama rm mini-qwen2.5-coder-7b:64k qwen2.5-coder:7b     # adjust to your model
+ollama rm mini-qwen2.5-coder-7b:32k qwen2.5-coder:7b     # example; substitute installed names
 ```
 
 Your own opencode config was never touched, so nothing else needs undoing.

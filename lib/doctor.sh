@@ -115,6 +115,36 @@ doctor_run() {
   if has python3; then d_ok "python3 ${C_DIM}(better html→text for webfetch)${C_RESET}"
   else d_warn "python3 missing — webfetch falls back to crude tag stripping"; d_fix "sudo apt install -y python3"; fi
 
+  # Provider-independent checks: the same in local and remote mode, so they sit
+  # above the remote early-return below.
+  step "Secrets"
+  local secret="${MINI_HOME}/secret" quoted_secret quoted_home
+  printf -v quoted_secret '%q' "$secret"
+  printf -v quoted_home '%q' "$HOME"
+  if [ -f "$secret" ]; then
+    local mode; mode=$(stat -c '%a' "$secret" 2>/dev/null)
+    if [ "$mode" = '600' ]; then
+      d_ok "server password stored 0600 ${C_DIM}(mini password)${C_RESET}"
+    else
+      d_fail "${secret} is mode ${mode} — other users on this box can read it"
+      d_fix "chmod 600 -- ${quoted_secret}"
+    fi
+  else
+    d_ok "no server password yet ${C_DIM}(generated on first: mini web)${C_RESET}"
+  fi
+
+  step "Capacity"
+  if [ "${DISK_FREE_GB:-0}" -lt 10 ]; then
+    d_warn "${DISK_FREE_GB}GB free in ${HOME} — host storage is low"
+    d_fix "df -h -- ${quoted_home}; du -h --max-depth=1 -- ${quoted_home}"
+  else
+    d_ok "${DISK_FREE_GB}GB free in ${HOME}"
+  fi
+  if [ "${BUDGET_MB:-0}" -lt 2000 ]; then
+    d_fail "only ${BUDGET_MB}MB hardware memory budget — below the 2000MB host threshold"
+    d_fix "free -h; if command -v nvidia-smi >/dev/null 2>&1; then nvidia-smi; fi"
+  fi
+
   step "Host tools"
   # Presence only: four independent lines, and none of them claims a service is
   # running or that anything was installed. A missing tool gets a fix line
@@ -179,7 +209,11 @@ doctor_run() {
     doctor_tools_section
     say ''
     [ "$DOCTOR_FAILS" -gt 0 ] && { err "${DOCTOR_FAILS} problem(s), ${DOCTOR_WARNS} warning(s)"; return 1; }
-    ok "healthy (remote inference)"
+    if [ "$DOCTOR_WARNS" -gt 0 ]; then
+      warn "healthy (remote inference), with ${DOCTOR_WARNS} warning(s)"
+    else
+      ok "healthy (remote inference)"
+    fi
     return 0
   fi
 
@@ -219,14 +253,17 @@ doctor_run() {
       d_ok "present in ollama"
     fi
     if [ -n "$ctx" ] && [ "$ctx" -lt 65536 ] 2>/dev/null; then
-      # Two very different causes, two very different fixes.
+      # Three very different causes, three very different fixes.
       local native; native=$(models_field "$base" 3)
       if [ -n "$native" ] && [ "$ctx" -ge "$native" ] 2>/dev/null; then
         d_warn "context ${ctx} — that is ${base}'s native maximum, and below the 64k opencode prefers"
         d_fix "for more, a long-context model: mini model devstral:24b (128k)"
-      else
-        d_warn "context ${ctx}; this model supports ${native} but memory here does not allow it"
+      elif [ -n "$native" ]; then
+        d_warn "context ${ctx}; ${base} supports ${native} but memory here does not allow it"
         d_fix "free memory, add a GPU, or drop a size: mini models"
+      else
+        d_warn "context ${ctx}; ${base} is not in the registry, so its native context is unknown — the context is chosen from the budget, capped at mini's 32768 fallback"
+        d_fix "ollama show ${base} | grep 'context length'"
       fi
     elif [ -n "$ctx" ]; then
       d_ok "context ${ctx}"
@@ -243,21 +280,7 @@ doctor_run() {
   doctor_opencode_section
   doctor_tools_section
 
-  step "Secrets"
-  local secret="${MINI_HOME}/secret"
-  if [ -f "$secret" ]; then
-    local mode; mode=$(stat -c '%a' "$secret" 2>/dev/null)
-    if [ "$mode" = '600' ]; then
-      d_ok "server password stored 0600 ${C_DIM}(mini password)${C_RESET}"
-    else
-      d_fail "${secret} is mode ${mode} — other users on this box can read it"
-      d_fix "chmod 600 ${secret}"
-    fi
-  else
-    d_ok "no server password yet ${C_DIM}(generated on first: mini web)${C_RESET}"
-  fi
-
-  step "Capacity"
+  step "Local inference capacity"
   # No GPU is not a failure, but it is the single biggest thing shaping what
   # this feels like to use — so say it plainly instead of letting the user
   # discover it by waiting.
@@ -268,14 +291,6 @@ doctor_run() {
     d_fix "for real speed, point mini at an external endpoint: mini remote"
   else
     d_ok "GPU inference ${C_DIM}(${GPU_NAME})${C_RESET}"
-  fi
-  if [ "${DISK_FREE_GB:-0}" -lt 10 ]; then
-    d_warn "${DISK_FREE_GB}GB free in ${HOME} — models need room"
-  else
-    d_ok "${DISK_FREE_GB}GB free in ${HOME}"
-  fi
-  if [ "${BUDGET_MB:-0}" -lt 2000 ]; then
-    d_fail "only ${BUDGET_MB}MB usable — too small to run an agent well"
   fi
 
   say ''
