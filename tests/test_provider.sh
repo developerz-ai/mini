@@ -6,6 +6,11 @@
 # have to agree: when they do not, opencode says "model not found" and the
 # cause reads as a broken model instead of a stale config.
 #
+# The --model run-only override pins the same agreement for one invocation:
+# the launch names ollama/<variant> built from MINI_FORCE_MODEL and points
+# OPENCODE_CONFIG at the run-scoped opencode-run.json, while the stored
+# selection and the live config stay untouched.
+#
 # Run: bash tests/test_provider.sh
 #
 # errexit is off on purpose — several cases run commands that must fail.
@@ -14,6 +19,10 @@ set -uo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 MINI_PLATFORMS="${ROOT}/platforms"
+# The override cases read the real model registry; lib/models.sh pins MODELS_TSV
+# from MINI_SHARE at source time, so it must be findable before the libs load.
+MINI_SHARE="${ROOT}/share"
+export MINI_SHARE
 
 # mini's state lives in one directory. It has to exist before the libs are
 # sourced: lib/ollama.sh reads MINI_HOME at source time.
@@ -22,6 +31,8 @@ HOMES=("${MINI_HOME}")
 
 # shellcheck source=../lib/common.sh
 . "$ROOT/lib/common.sh"
+# shellcheck source=../lib/models.sh
+. "$ROOT/lib/models.sh"
 # shellcheck source=../lib/ollama.sh
 . "$ROOT/lib/ollama.sh"
 # shellcheck source=../lib/opencode.sh
@@ -76,6 +87,16 @@ check_has() { # <name> <needle> <haystack>
   esac
   printf '  FAIL  %s\n         expected to contain: %s\n         actual: %s\n' "$1" "$2" "$3"
   return 1
+}
+
+check_lacks() { # <name> <needle> <haystack>
+  case "$3" in
+    *"$2"*)
+      printf '  FAIL  %s\n         expected NOT to contain: %s\n' "$1" "$2"
+      return 1 ;;
+  esac
+  printf '  ok    %s\n' "$1"
+  return 0
 }
 
 check_fail() { # <name> <status>
@@ -250,6 +271,188 @@ case_doctor_remote_incomplete() {
   return $rc
 }
 
+# A fake opencode that prints its OPENCODE_CONFIG and its arguments, so the
+# override cases can assert both halves of the launch contract: the ref (-m)
+# and the config the launch points at.
+new_fake_opencode() {
+  FAKE_OPENCODE="${MINI_HOME}/fake-opencode"
+  cat > "$FAKE_OPENCODE" <<'SH'
+#!/usr/bin/env bash
+printf 'cfg=%s\n' "${OPENCODE_CONFIG:-}"
+printf '%s\n' "$*"
+SH
+  chmod +x "$FAKE_OPENCODE"
+  opencode_bin() { printf '%s' "$FAKE_OPENCODE"; }
+}
+
+# Seed one stored local selection and a placeholder live config, then keep
+# the case hermetic: ollama_has_model stubbed so models_ensure never talks to
+# ollama (a real call would try to pull). run_case bodies run in the main
+# shell, so MINI_FORCE_MODEL and the stub are unset/restored before the case
+# returns — env leaking between cases flips later-case behavior.
+new_override_home() {
+  MINI_HOME="$(new_home)"
+  export MINI_FORCE_MODEL='qwen2.5-coder:7b'
+
+  cfg_set MINI_PROVIDER local
+  cfg_set MINI_MODEL 'mini-qwen2.5-coder-3b:16k'
+  cfg_set MINI_BASE_MODEL 'qwen2.5-coder:3b'
+  cfg_set MINI_CTX 16384
+
+  printf '{ "model": "ollama/mini-qwen2.5-coder-3b:16k" }\n' > "${MINI_HOME}/opencode.json"
+  cp "${MINI_HOME}/opencode.json" "${MINI_HOME}/live-before.json"
+
+  ollama_has_model() { return 0; }
+  new_fake_opencode
+}
+
+override_hygiene() {
+  unset MINI_FORCE_MODEL
+  unset -f ollama_has_model
+  # case_override_failure also stubs `ollama` itself so the pull fails; the
+  # libs never define it, so unsetting is always safe.
+  unset -f ollama
+  # shellcheck source=../lib/ollama.sh
+  . "$ROOT/lib/ollama.sh"
+}
+
+# (8) --model override, run path: the launch names the override variant and
+# points at the run-scoped config; the stored selection and the live config
+# are untouched. Stubbed budget 4096 + registry max_ctx 32768 give ctx 16384,
+# variant mini-qwen2.5-coder-7b:16k.
+case_run_override() {
+  local rc=0 out
+  new_override_home
+
+  out="$(opencode_run 2>/dev/null)"
+  check_has 'override run: launches with the override variant' \
+    '-m ollama/mini-qwen2.5-coder-7b:16k' "$out" || rc=1
+  check_has 'override run: points at the run-scoped config' \
+    "cfg=${MINI_HOME}/opencode-run.json" "$out" || rc=1
+  check_file_has 'override run: config declares the override variant' \
+    '"model": "ollama/mini-qwen2.5-coder-7b:16k"' "${MINI_HOME}/opencode-run.json" || rc=1
+  check_file_has 'override run: config carries the 16k limit' \
+    '"limit": { "context": 16384, "output": 2048 }' "${MINI_HOME}/opencode-run.json" || rc=1
+  check_eq 'override run: stored MINI_MODEL kept' \
+    'mini-qwen2.5-coder-3b:16k' "$(cfg_get MINI_MODEL)" || rc=1
+  check_eq 'override run: stored MINI_BASE_MODEL kept' \
+    'qwen2.5-coder:3b' "$(cfg_get MINI_BASE_MODEL)" || rc=1
+  check_eq 'override run: stored MINI_CTX kept' \
+    '16384' "$(cfg_get MINI_CTX)" || rc=1
+  check_eq 'override run: live config byte-identical' 'same' "$(cmp -s \
+    "${MINI_HOME}/live-before.json" "${MINI_HOME}/opencode.json" && printf same || printf changed)" || rc=1
+
+  override_hygiene
+  return $rc
+}
+
+# (9) --model override, continuation path: `mini -c` resolves the same way.
+case_continue_override() {
+  local rc=0 out
+  new_override_home
+
+  out="$(opencode_launch -c 2>/dev/null)"
+  check_has 'override -c: launches with the override variant' \
+    '-m ollama/mini-qwen2.5-coder-7b:16k' "$out" || rc=1
+  check_has 'override -c: passes -c through to opencode' ' --auto -c' "$out" || rc=1
+  check_has 'override -c: points at the run-scoped config' \
+    "cfg=${MINI_HOME}/opencode-run.json" "$out" || rc=1
+  check_eq 'override -c: live config byte-identical' 'same' "$(cmp -s \
+    "${MINI_HOME}/live-before.json" "${MINI_HOME}/opencode.json" && printf same || printf changed)" || rc=1
+
+  override_hygiene
+  return $rc
+}
+
+# (10) --model under remote inference: the override warns and is ignored —
+# `mini remote` owns the model, so the launch keeps the remote ref and the
+# live config.
+case_run_override_remote_ignored() {
+  local rc=0 out
+  MINI_HOME="$(new_home)"
+  export MINI_FORCE_MODEL='qwen2.5-coder:7b'
+
+  cfg_set MINI_PROVIDER remote
+  cfg_set MINI_REMOTE_URL 'https://api.example.test/v1'
+  cfg_set MINI_REMOTE_MODEL 'test-model-x'
+
+  new_fake_opencode
+  out="$(opencode_run 2>&1)"
+
+  check_has 'remote override: the configured remote model stays' \
+    '-m mini-remote/test-model-x' "$out" || rc=1
+  check_has 'remote override: still the live config' \
+    "cfg=${MINI_HOME}/opencode.json" "$out" || rc=1
+  check_has 'remote override: says the override was ignored' \
+    'is a local-model override' "$out" || rc=1
+
+  unset MINI_FORCE_MODEL
+  return $rc
+}
+
+# (11) No --model: opencode_resolve_launch's default branch — the stored
+# selection and the live config. case_launch_flags drives this branch too
+# (opencode_web calls opencode_resolve_launch), but its fake prints only the
+# arguments, so it pins only the -m ref; this case uniquely pins the config
+# half: cfg=$MINI_HOME/opencode.json for both opencode_run and
+# opencode_launch -c. Deleting the default
+# MINI_LAUNCH_CONFIG="${MINI_HOME}/opencode.json" in lib/opencode.sh cannot
+# leave this file green: set -u makes the unset variable fatal at the
+# OPENCODE_CONFIG expansion, so this case fails and the file goes red.
+case_launch_default() {
+  local rc=0 out
+  MINI_HOME="$(new_home)"
+  # This case pins the no-override branch; say so instead of trusting the
+  # cases before it to have cleaned up (run_case bodies share this shell).
+  unset MINI_FORCE_MODEL
+  cfg_set MINI_PROVIDER local
+  cfg_set MINI_MODEL 'mini-qwen2.5-coder-3b:16k'
+  new_fake_opencode
+
+  out="$(opencode_run 2>/dev/null)"
+  check_has 'no override: the run keeps the stored model' \
+    '-m ollama/mini-qwen2.5-coder-3b:16k' "$out" || rc=1
+  check_has 'no override: the run keeps the live config' \
+    "cfg=${MINI_HOME}/opencode.json" "$out" || rc=1
+
+  out="$(opencode_launch -c 2>/dev/null)"
+  check_has 'no override: -c keeps the stored model' \
+    '-m ollama/mini-qwen2.5-coder-3b:16k' "$out" || rc=1
+  check_has 'no override: -c keeps the live config' \
+    "cfg=${MINI_HOME}/opencode.json" "$out" || rc=1
+  return $rc
+}
+
+# (12) A failed override refuses to launch — a failed resolution is not the
+# same as there being nothing to override, and half a resolution would launch
+# a ref its config never declares. models_ensure is made to fail
+# deterministically (variant missing, base missing, `ollama` itself failing),
+# so the pull inside it dies without network or daemon.
+case_override_failure() {
+  local rc=0 out status
+  new_override_home
+
+  ollama_has_model() { return 1; }  # the variant and the base are both "missing"
+  ollama() { return 1; }            # so `ollama pull` fails and models_ensure dies
+
+  out="$(opencode_run 2>&1)"; status=$?
+  check_fail 'failed override: exits non-zero' "$status" || rc=1
+  check_has 'failed override: says why' 'could not pull' "$out" || rc=1
+  check_lacks 'failed override: opencode never launched' 'cfg=' "$out" || rc=1
+  check_lacks 'failed override: never falls back to the stored model' \
+    'mini-qwen2.5-coder-3b:16k' "$out" || rc=1
+  if [ -e "${MINI_HOME}/opencode-run.json" ]; then
+    printf '  FAIL  %s\n         %s exists\n' \
+      'failed override: no run config written' "${MINI_HOME}/opencode-run.json"
+    rc=1
+  else
+    printf '  ok    %s\n' 'failed override: no run config written'
+  fi
+
+  override_hygiene
+  return $rc
+}
+
 run_case() {
   local name="$1"; shift
   printf '\n%s\n' "$name"
@@ -269,6 +472,11 @@ run_case "local: no model"                                  case_local_no_model
 run_case "remote: a stale config is repaired"                case_stale_remote_config
 run_case "the launch passes the ref to opencode"             case_launch_flags
 run_case "doctor: an incomplete remote setup fails"          case_doctor_remote_incomplete
+run_case "--model override: the run path uses the variant + run config" case_run_override
+run_case "--model override: -c uses the variant + run config"          case_continue_override
+run_case "--model override: remote ignores it"                          case_run_override_remote_ignored
+run_case "no --model: stored model + live config"                       case_launch_default
+run_case "--model override: a failed resolution refuses to launch"       case_override_failure
 
 printf '\n%s passed, %s failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" -eq 0 ]

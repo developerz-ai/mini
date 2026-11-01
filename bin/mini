@@ -78,13 +78,14 @@ ${C_BOLD}COMMANDS${C_RESET}
 
 ${C_BOLD}FLAGS${C_RESET}
   --safe           ask before each action (default is auto-approve)
-  --model <id>     use a different model for this run only
+  --model <id>     use a different model for one task or -c run (stored model untouched; setup still stores its choice)
 
 ${C_BOLD}EXAMPLES${C_RESET}
   mini "install docker and add me to the docker group"
   mini "nginx returns 502, find out why"
   mini "what is eating my disk"
   mini --safe "remove old kernels"
+  mini --model qwen2.5-coder:14b "what is eating my disk"
 
 State lives in ${MINI_HOME}
 EOF
@@ -565,7 +566,9 @@ main() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --safe)  MINI_SAFE=1; export MINI_SAFE; shift ;;
-      --model) MINI_FORCE_MODEL="${2:-}"; export MINI_FORCE_MODEL; shift 2 ;;
+      --model)
+               [ -n "${2:-}" ] || die 'usage: mini --model <id> — e.g. mini --model qwen2.5-coder:7b "task"'
+               MINI_FORCE_MODEL="${2:-}"; export MINI_FORCE_MODEL; shift 2 ;;
       --yes|-y) MINI_YES=1; export MINI_YES; shift ;;
       *) break ;;
     esac

@@ -181,30 +181,41 @@ with open(fresh_path, "w", encoding="utf-8") as f:
 PY
 }
 
-# Replace the live config with a freshly generated one.
-#   opencode_install_config <fresh-tmp> <live>
+# Replace <live> with a freshly generated one.
+#   opencode_install_config <fresh-tmp> <live> [carry-from]
 #
-# The merge runs first; when it cannot (no python3, or an old config that does
-# not parse), the old file is kept as <live>.bak.XXXXXX and the user is warned — a
-# regeneration never silently destroys their edits. Only a config that
-# validates replaces the live one.
+# The user's own slash commands are carried from <carry-from>, which defaults
+# to the live config — a plain regeneration reads the file it replaces. The
+# merge runs first; when it cannot (no python3, or a carry-from config that
+# does not parse), that file is kept as <carry-from>.bak.XXXXXX and the user
+# is warned — a regeneration never silently destroys their edits. Only a
+# config that validates replaces the live one.
 opencode_install_config() {
+  # carry must be declared in its own statement: bash expands every word of a
+  # `local` line before any of them is assigned, so ${3:-$live} on the same
+  # line would read live while it is still unset (fatal under set -u).
   local fresh="$1" live="$2" backup
-  if ! opencode_merge_commands "$fresh" "$live"; then
+  local carry="${3:-$live}"
+  if ! opencode_merge_commands "$fresh" "$carry"; then
     # Reserve a unique path so repeated fallbacks never erase recovery data.
-    backup=$(mktemp "${live}.bak.XXXXXX") || return 1
-    cp -p "$live" "$backup" || return 1
+    backup=$(mktemp "${carry}.bak.XXXXXX") || return 1
+    cp -p "$carry" "$backup" || return 1
     warn "could not carry your custom slash commands into the new config — the previous config is kept as ${backup}"
   fi
   opencode_validate_config "$fresh"
   mv -f "$fresh" "$live"
 }
 
-# Writes $MINI_HOME/opencode.json, carrying the user's own slash commands over
-# from the previous config (see opencode_install_config).
+# Writes an opencode config, carrying the user's own slash commands over from
+# the previous config (see opencode_install_config).
 #   $1 = variant model id (e.g. mini-qwen2.5-coder-7b:32k)
 #   $2 = context window
+#   $3 = destination (default: the live ${MINI_HOME}/opencode.json)
+#   $4 = where user commands are carried from (default: the destination)
 #
+# $3/$4 serve the run-only --model override: it writes a run-scoped
+# opencode-run.json while carrying user commands from — and never touching —
+# the live config.
 # Note the "tools" block — it is a latency setting, not a preference.
 #
 # Every enabled tool ships its JSON schema in the prompt on EVERY request.
@@ -218,7 +229,8 @@ opencode_install_config() {
 # are more natural to it anyway), webfetch is replaced by mini_fetch, and
 # task/todo* are planning scaffolding a small local model uses badly.
 opencode_write_config() {
-  local model="$1" ctx="$2" out="${MINI_HOME}/opencode.json"
+  local model="$1" ctx="$2" out="${3:-${MINI_HOME}/opencode.json}"
+  local carry="${4:-$out}"
   local tmp="${out}.tmp"
   local label="mini · ${model}"
   local out_tokens=$(( ctx / 8 ))
@@ -246,7 +258,8 @@ opencode_write_config() {
 
   ensure_dir "$MINI_HOME"
 
-  # Remote inference takes a different provider block entirely.
+  # Remote inference takes a different provider block entirely — and always
+  # targets the live config: remote has no run-scoped model to declare.
   if [ "$(cfg_get MINI_PROVIDER)" = 'remote' ]; then
     opencode_write_remote_config
     return $?
@@ -296,7 +309,7 @@ opencode_write_config() {
 $(opencode_command_block)
 }
 JSON
-  opencode_install_config "$tmp" "$out"
+  opencode_install_config "$tmp" "$out" "$carry" || return 1
   ok "wrote ${out}"
 }
 
@@ -364,21 +377,92 @@ opencode_model_ref() {
   fi
 }
 
+# The run-only `--model <id>` override (same base id `mini model <id>` takes).
+#
+# Resolution mirrors cmd_model: detect the hardware, pick the context window,
+# ensure the derived num_ctx variant exists (pulls/builds when missing —
+# ollama is guaranteed up because ensure_ready runs before every launch).
+# Run-only is the contract: the stored selection (MINI_MODEL/MINI_BASE_MODEL/
+# MINI_CTX) and the live opencode.json are never touched. The variant is
+# declared in a run-scoped ${MINI_HOME}/opencode-run.json instead, rewritten
+# on every override launch.
+#
+# Prints the ref on stdout — everything else on stderr, like
+# opencode_model_ref — and returns 0 when an override applies. Returns 1,
+# nothing to override with, when MINI_FORCE_MODEL is empty, or when inference
+# is remote: `mini remote` owns the remote model, and --model would be a
+# local-only no-op there.
+opencode_override_ref() {
+  local base="${MINI_FORCE_MODEL:-}"
+  [ -n "$base" ] || return 1
+
+  if [ "$(cfg_get MINI_PROVIDER)" = 'remote' ]; then
+    warn "--model '${base}' is a local-model override — the configured remote model stays"
+    dim "  to run it locally, switch back first:  mini local"
+    return 1
+  fi
+
+  detect_all
+  models_known "$base" || warn "'${base}' is not in the registry — trying it anyway"
+
+  local ctx variant
+  ctx=$(models_pick_ctx "$base")
+  variant=$(models_ensure "$base" "$ctx" | tail -n1) || return 1
+  [ -n "$variant" ] || return 1
+
+  # Same shape as the live config, with the user's slash commands carried from
+  # it. The whole write goes to stderr: stdout here is the ref, and the caller
+  # captures it.
+  opencode_write_config "$variant" "$ctx" \
+    "${MINI_HOME}/opencode-run.json" "${MINI_HOME}/opencode.json" >&2 \
+    || return 1
+  printf '%s\n' "ollama/${variant}"
+}
+
+# Resolve one launch: the provider/model ref and the config declaring it, set
+# as MINI_LAUNCH_REF and MINI_LAUNCH_CONFIG in the caller's shell. The launch
+# must name the same provider/model its config declares (see
+# opencode_model_ref) — and a command substitution would drop the globals, so
+# the config path never travels through opencode_model_ref.
+#
+# Default is the live config; a --model override launches against the
+# run-scoped opencode-run.json (opencode_override_ref). A failed resolution
+# exits: half of it would name a model the config does not declare.
+opencode_resolve_launch() {
+  MINI_LAUNCH_CONFIG="${MINI_HOME}/opencode.json"
+  if [ -n "${MINI_FORCE_MODEL:-}" ]; then
+    if [ "$(cfg_get MINI_PROVIDER)" = 'remote' ]; then
+      # Only the warn-and-decline path is reachable here: remote mode returns
+      # from opencode_override_ref before any resolution work, so falling
+      # through to the stored selection is exactly what the warning promised.
+      opencode_override_ref || true
+    else
+      # A failure here is a failed override, not a missing one — and `die`
+      # inside the substitution only ends the subshell, so carry it out
+      # explicitly instead of relying on errexit.
+      MINI_LAUNCH_REF=$(opencode_override_ref) || exit 1
+      MINI_LAUNCH_CONFIG="${MINI_HOME}/opencode-run.json"
+      return 0
+    fi
+  fi
+  MINI_LAUNCH_REF=$(opencode_model_ref) || exit 1
+}
+
 # Launch opencode against mini's config, in the caller's current directory.
+# The config is the live one; a --model override swaps in the run-scoped
+# opencode-run.json (opencode_resolve_launch decides).
 #
 # Yolo (--auto) is the default: this is a local model on your own box and
 # approving every `ls` kills the point. `mini --safe` restores the prompts.
 opencode_launch() {
-  local bin ref
+  local bin
   bin=$(opencode_bin) || die "opencode is not installed — run: mini setup"
-  # `die` inside the substitution only ends the subshell, so carry the
-  # failure out explicitly instead of relying on errexit.
-  ref=$(opencode_model_ref) || exit 1
+  opencode_resolve_launch
 
-  local -a flags=(-m "$ref")
+  local -a flags=(-m "$MINI_LAUNCH_REF")
   [ "${MINI_SAFE:-0}" = '1' ] || flags+=(--auto)
 
-  OPENCODE_CONFIG="${MINI_HOME}/opencode.json" \
+  OPENCODE_CONFIG="$MINI_LAUNCH_CONFIG" \
   OLLAMA_HOST="$OLLAMA_HOST_ADDR" \
   PATH="$(opencode_agent_path)" \
     exec "$bin" "${flags[@]}" "$@"
@@ -466,7 +550,8 @@ opencode_web() {
   local mode="$1"; shift
   local bin ref host='127.0.0.1' pw
   bin=$(opencode_bin) || die "opencode is not installed — run: mini setup"
-  ref=$(opencode_model_ref) || exit 1
+  opencode_resolve_launch
+  ref="$MINI_LAUNCH_REF"
 
   if [ "${1:-}" = '--lan' ]; then
     host='0.0.0.0'
@@ -483,23 +568,24 @@ opencode_web() {
   [ "$host" = '0.0.0.0' ] && warn "anyone who reaches this port and knows the password gets a shell on this box"
   say ''
 
-  OPENCODE_CONFIG="${MINI_HOME}/opencode.json" \
+  OPENCODE_CONFIG="$MINI_LAUNCH_CONFIG" \
   OLLAMA_HOST="$OLLAMA_HOST_ADDR" \
   OPENCODE_SERVER_PASSWORD="$pw" \
   PATH="$(opencode_agent_path)" \
     exec "$bin" "$mode" --hostname "$host" -m "$ref" "$@"
 }
 
-# One-shot: `mini "why is nginx down"`.
+# One-shot: `mini "why is nginx down"`. Same config rules as opencode_launch:
+# the live config, or the run-scoped one under a --model override.
 opencode_run() {
-  local bin ref
+  local bin
   bin=$(opencode_bin) || die "opencode is not installed — run: mini setup"
-  ref=$(opencode_model_ref) || exit 1
+  opencode_resolve_launch
 
-  local -a flags=(run -m "$ref")
+  local -a flags=(run -m "$MINI_LAUNCH_REF")
   [ "${MINI_SAFE:-0}" = '1' ] || flags+=(--auto)
 
-  OPENCODE_CONFIG="${MINI_HOME}/opencode.json" \
+  OPENCODE_CONFIG="$MINI_LAUNCH_CONFIG" \
   OLLAMA_HOST="$OLLAMA_HOST_ADDR" \
   PATH="$(opencode_agent_path)" \
     exec "$bin" "${flags[@]}" "$@"

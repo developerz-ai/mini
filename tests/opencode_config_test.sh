@@ -8,7 +8,9 @@
 # kept byte-for-byte in a unique opencode.json.bak.* with a warning, and the eager
 # fallback must never overwrite an earlier recovery backup. The
 # fresh config must still be written and valid. The remote writer must leave
-# the file 0600 (it embeds the API key).
+# the file 0600 (it embeds the API key). A run-scoped write (the --model
+# override's opencode-run.json) carries the user's commands from the live
+# config and leaves that file byte-for-byte identical.
 #
 # PATH-stubbed contract test: inside every case PATH is a sandbox bin dir —
 # the real python3 symlinked in, or pointedly absent — so nothing here can
@@ -191,6 +193,10 @@ case_regen_gpu_timeouts() {
   PATH="$SANDBOX_BIN"; hash -r
   opencode_write_config 'mini-test:7b' 32768
 }
+case_run_scoped_write() {
+  PATH="$SANDBOX_BIN"; hash -r
+  opencode_write_config 'mini-test:1b' 8192 "$SANDBOX/run-config.json" "$CFG"
+}
 
 # --- 1: first run, no previous config ----------------------------------------
 
@@ -360,6 +366,42 @@ assert_eq 'gpu regen: timeout' '600000' \
 assert_eq 'gpu regen: chunkTimeout' '120000' \
   "$(json_get "$CFG" "d['provider']['ollama']['options']['chunkTimeout']")"
 assert_false 'gpu regen: cpu timeout value gone' grep -qF '2700000' "$CFG"
+
+# --- 7: a run-scoped write carries from the live config, never touches it ----
+
+# The --model override writes a run-scoped config next to the live one. The
+# user's slash commands must be carried from the live config, and that file
+# itself must come out byte-for-byte identical — a run-scoped write has no
+# business regenerating the stored one.
+
+seed_user_command "$CFG" mytool
+cp "$CFG" "$SANDBOX/live-before.json"
+
+run_case case_run_scoped_write
+assert_eq 'run-scoped: exit 0' '0' "$RUN_RC"
+assert_true 'run-scoped: run config valid JSON' json_ok "$SANDBOX/run-config.json"
+assert_eq 'run-scoped: model' 'ollama/mini-test:1b' \
+  "$(json_get "$SANDBOX/run-config.json" "d['model']")"
+assert_eq 'run-scoped: small_model' 'ollama/mini-test:1b' \
+  "$(json_get "$SANDBOX/run-config.json" "d['small_model']")"
+assert_eq 'run-scoped: context limit' '8192' \
+  "$(json_get "$SANDBOX/run-config.json" "d['provider']['ollama']['models']['mini-test:1b']['limit']['context']")"
+assert_eq 'run-scoped: output limit' '1024' \
+  "$(json_get "$SANDBOX/run-config.json" "d['provider']['ollama']['models']['mini-test:1b']['limit']['output']")"
+assert_eq 'run-scoped: baseURL kept' 'http://127.0.0.1:11434/v1' \
+  "$(json_get "$SANDBOX/run-config.json" "d['provider']['ollama']['options']['baseURL']")"
+assert_eq 'run-scoped: user entry carried (description)' 'Mine: mytool' \
+  "$(json_get "$SANDBOX/run-config.json" "d['command']['mytool']['description']")"
+assert_eq 'run-scoped: user entry carried (template)' "$MYTOOL_TEMPLATE" \
+  "$(json_get "$SANDBOX/run-config.json" "d['command']['mytool']['template']")"
+assert_eq 'run-scoped: managed diag is the default' \
+  'Diagnose what is wrong with this machine right now' \
+  "$(json_get "$SANDBOX/run-config.json" "d['command']['diag']['description']")"
+assert_eq 'run-scoped: command block size (defaults + mytool)' '8' \
+  "$(json_get "$SANDBOX/run-config.json" "len(d['command'])")"
+assert_true 'run-scoped: live config byte-identical' \
+  cmp -s "$SANDBOX/live-before.json" "$CFG"
+assert_eq 'run-scoped: no .bak beside the live config' 'absent' "$(bak_state "$CFG")"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -242,6 +242,20 @@ mini models --refresh           # re-check the registry against ollama upstream
 Switching pulls the base model and rebuilds the derived `num_ctx` variant, so
 the first switch to a new model is slow and every one after is instant.
 
+### One run on a different model
+
+```bash
+mini --model qwen2.5-coder:14b "check disk"   # one task on that model
+mini --model qwen2.5-coder:14b -c             # or continue a session with it
+```
+
+`--model` takes the same base id as `mini model`. For that invocation mini
+builds the derived `num_ctx` variant exactly like a switch — pulling the base
+the first time, so the first use of a new model is slow — and launches against
+a run-scoped `opencode-run.json` in the state dir instead of the live config.
+`mini config`, `mini status` and `mini doctor` keep reporting the stored model,
+and the next run without the flag is back on it.
+
 ## Keeping it healthy
 
 ```bash
