@@ -128,6 +128,23 @@ mini web --lan       # reachable from your network, still password-protected
 mini headless        # a server to attach to from another machine
 ```
 
+Both `mini web` and `mini headless` follow the configured provider:
+
+| Mode | What opencode is launched with |
+|---|---|
+| default | the local ollama model, `ollama/<model>` |
+| after `mini remote` | the remote endpoint, `mini-remote/<model>` |
+
+A remote-only box needs no local model: nothing is pulled, and ollama does not
+have to be running. If the remote setup is incomplete — no URL or no model —
+the launch stops before opencode starts and names the command that fixes it:
+
+```
+no remote model configured — run: mini remote <url> <model> [key]
+```
+
+`mini doctor` reports the same gap as a failure and prints that fix command.
+
 The password is 32 random characters, generated on first use and stored `0600`
 in `$MINI_HOME/secret`. It exists because this endpoint can run commands on
 the machine — unauthenticated, it would be a remote shell for anyone who can
@@ -161,6 +178,7 @@ When the box cannot run a model fast enough, move only the inference:
 ```bash
 mini remote https://openrouter.ai/api/v1 qwen/qwen3-coder sk-or-...
 mini remote                  # interactive; the key prompt is hidden
+MINI_YES=1 mini remote       # unattended; re-applies the saved endpoint, empty key
 mini local                   # back to the local model
 ```
 
@@ -168,10 +186,35 @@ Anything OpenAI-compatible: OpenRouter, Groq, Together, DeepInfra, a vLLM server
 on your LAN, or another machine's ollama at `http://host:11434/v1` (no key).
 
 Everything else is unchanged — same `AGENTS.md`, same tools, same memory, same
-slash commands. `mini doctor` shows which mode you are in.
+slash commands. `mini doctor` shows which mode you are in. In remote mode it
+still checks the host, API-key permissions, opencode, tools, server-password
+permissions and disk/memory budget. It skips local Ollama installation, server
+and binding checks, local model presence/context/recommendations, and GPU/CPU
+inference-speed advice. No local model or GPU is required.
+
+In remote mode there is no local model to set up — `mini web` and `mini headless`
+use the remote endpoint as well (see [Browser UI](#browser-ui-and-remote-access)).
+
+Remote inference moves model execution, not opencode or the tools: those still
+run on this host and need resources. Low disk space or a small detected memory
+budget can therefore still produce doctor warnings or failures.
 
 The key lands `0600` in `$MINI_HOME/api-key`, and `opencode.json` becomes
 `0600` as well because it embeds the key.
+
+Under `MINI_YES=1` the key prompt is skipped: nothing is read from stdin, and an
+empty key is written to `~/.cache/mini/api-key` — `0600`, like any other key
+file. So `mini remote` never blocks on a secret in a script or a cloud-init
+run. The generated `opencode.json` then carries an empty `apiKey`, which is what
+a keyless endpoint wants; if the endpoint needs a real key, set it yourself
+afterwards or use the 3-argument form above.
+
+`MINI_YES=1` takes the URL and the model from what is already saved in
+`~/.cache/mini/config`, because there is nobody there to answer the prompts.
+It re-applies that endpoint; it does not set one up. With nothing configured
+yet it stops at `no URL given` and writes nothing at all — no key file, no
+config change. For a first-time setup use the 3-argument form above, which
+sets the URL, the model and the key in one go.
 
 ## Changing the model
 
@@ -195,7 +238,30 @@ mini update      # opencode + ollama + the model
 ```
 
 `mini doctor` is the first thing to run when something feels off. Every failing
-check prints the command that fixes it.
+check prints a repair or diagnostic command. Shared checks apply to both local
+and remote inference:
+
+- **Host tools:** `ss`, `systemctl`, `ufw` and `docker` are checked for
+  presence only. A missing one is a warning saying what the agent cannot do
+  without it, with the install command printed as the fix — doctor never
+  installs anything itself.
+- **Server password:** an existing `$MINI_HOME/secret` must have mode `0600`.
+  Unsafe permissions fail the check; repair without reading the password:
+  `chmod 600 "${MINI_HOME:-$HOME/.cache/mini}/secret"`. A missing file is normal
+  until the first `mini web`; doctor does not require creating one.
+- **Disk:** less than 10 GB free in the home filesystem is a warning. Inspect
+  with `df -h "$HOME"` and `du -h --max-depth=1 "$HOME"`, then move or remove
+  only data you have reviewed and no longer need, or expand the filesystem.
+- **Memory budget:** a detected budget below 2000 MB is a failure, including
+  with remote inference. This is mini's model-memory budget (GPU VRAM minus
+  1024 MB when used, otherwise 60% of RAM), not currently free RAM. Inspect
+  `free -h` and `ps -eo pid,comm,rss --sort=-rss`; stop only known, unnecessary
+  workloads. A hardware-derived budget may require a larger host or more RAM,
+  not just closing processes.
+
+Remote mode also checks an existing API-key file's permissions. Warnings appear
+in the final summary; failed shared checks make doctor exit nonzero even when
+the remote endpoint is reachable.
 
 ## Tuning the brain
 
