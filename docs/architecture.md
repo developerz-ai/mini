@@ -56,8 +56,8 @@ both absent, a card found via `lspci` is named in the report but counts as zero
 — a driver-less GPU cannot run anything.
 
 `lib/models.sh` walks `share/models.tsv` best → smallest and takes the first row
-that fits. On CPU it skips everything above `qwen2.5-coder:7b`: a 24B model on
-CPU produces a couple of tokens a second, which is not an interactive agent.
+that fits. On CPU it skips everything above `qwen3:4b-instruct`: a 7B model
+generates about 2.5 tokens a second on CPU, which is not an interactive agent.
 `mini model <id>` overrides this.
 
 ## The context variant

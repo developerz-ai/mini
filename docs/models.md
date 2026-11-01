@@ -56,8 +56,7 @@ mini model devstral:24b       # your box, your call
 | `qwen2.5-coder:7b` | 4.7GB | 6.5GB | 32k | Code-specialised baseline. 8GB GPU. |
 | `qwen3:4b-instruct` | 2.5GB | 4GB | 256k | **The CPU default.** Best small all-rounder. |
 | `llama3.2:3b` | 2.0GB | 3GB | 128k | Small generalist, dependable tool calling. |
-| `qwen3:1.7b` | 1.4GB | 2.5GB | 40k | Tool calling still holds. Simple tasks. |
-| `qwen3:0.6b` | 522MB | 1.5GB | 40k | Runs anywhere. Hand-hold every step. |
+| `llama3.2:1b` | 1.3GB | 2GB | 128k | Non-thinking, still calls tools. Simple tasks only. |
 
 Sizes are approximate and include working KV cache, not just weights.
 `mini models --refresh` re-checks each entry against the ollama library so a
