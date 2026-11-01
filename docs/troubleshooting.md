@@ -96,8 +96,8 @@ mini config      # which model
 nvidia-smi       # is the GPU actually being used
 ```
 
-On CPU, expect a few tokens per second for a 7B model. That is normal and it is
-why mini caps CPU auto-selection at 7B.
+On CPU, expect a few tokens per second. That is normal and it is why mini caps
+CPU auto-selection at `qwen3:4b-instruct`.
 
 Two things dominate the wait, and only one of them is the model:
 
@@ -174,7 +174,19 @@ never built or was removed:
 mini setup
 ```
 
-If ollama is running under systemd and mini cannot start it:
+For systemd startup, mini runs `systemctl start ollama` directly as root, or
+with `sudo -n` as a non-root user. It never prompts for a password. If the
+command fails, mini prints a warning on stderr and immediately falls back to a
+user process, without waiting for the failed service start. If noninteractive
+privileges are unavailable, `mini sudo` is an optional remedy to grant
+passwordless sudo; it is not required for the user-process fallback.
+
+A successful systemd start is still checked for readiness; if the service does
+not become ready, mini warns and falls back to a user process too. If that
+process also fails to become ready, the fatal error points to
+`$MINI_HOME/logs/ollama.log` (normally `~/.cache/mini/logs/ollama.log`).
+
+If mini cannot start the systemd service, inspect it manually:
 
 ```bash
 sudo systemctl status ollama
