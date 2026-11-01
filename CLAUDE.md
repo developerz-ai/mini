@@ -110,6 +110,10 @@ read runtime state in the install root.
 
 There is no test framework — the checks are plain bash scripts you run by hand.
 The webfetch truncation/failure contract has a self-test (`tests/webfetch.sh`).
+When changing capture or truncation, compare output byte for byte against the
+fixture with zero, one, and multiple trailing newlines, below and at the cap.
+Preserve newlines with a capture sentinel, keep converter failures non-zero,
+and test Python character slicing with multibyte input under `LC_ALL=C`.
 
 ```bash
 bash tests/remote_key_test.sh    # offline, no network, no framework

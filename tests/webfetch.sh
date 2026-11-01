@@ -108,15 +108,30 @@ expect_st 'oversized converted: exit 0' 0
 expect_out 'oversized converted: header + cap + blank line + note'
 expect_err_empty 'oversized converted: stderr clean'
 
-# 2. Converted, short: exact bytes, no note.
-printf '<p>hello world</p>' >"$FIX"
+# 2. Identity converter: preserve zero, one, and multiple trailing newlines,
+# both below and exactly at the cap. Expectations come from the fixture itself.
 case_path curl w3m
+for ending in '' $'\n' $'\n\n\n'; do
+  printf '<p>hello world</p>%s' "$ending" >"$FIX"
+  fixture "$FIX"
+  for cap in 20000 "$(wc -c <"$FIX")"; do
+    run_wfetch -c "$cap" https://example.test/short
+    expect_st "short converted (ending ${#ending}, cap $cap): exit 0" 0
+    { printf '# %s\n\n' 'https://example.test/short'; cat "$FIX"; } >"$EXP"
+    expect_out "short converted (ending ${#ending}, cap $cap): exact fixture bytes"
+    expect_err_empty 'short converted: stderr clean'
+  done
+done
+
+# A trailing newline is part of converter output and counts toward the cap.
+printf 'abc\n' >"$FIX"
 fixture "$FIX"
-run_wfetch https://example.test/short
-expect_st 'short converted: exit 0' 0
-{ printf '# %s\n\n' 'https://example.test/short'; printf '<p>hello world</p>\n'; } >"$EXP"
-expect_out 'short converted: exact bytes, no note'
-expect_err_empty 'short converted: stderr clean'
+run_wfetch -c 3 https://example.test/boundary
+expect_st 'newline over boundary: exit 0' 0
+{ printf '# https://example.test/boundary\n\nabc'
+  printf '\n\n… truncated at 3 chars of 4. Re-run with -c to read more.\n'
+} >"$EXP"
+expect_out 'newline over boundary: cap before presentation separators'
 
 # 3. Raw oversized: exactly MAX_CHARS bytes, no header, no note. Fixture is
 #    larger than both the cap and the 64 KiB pipe buffer.
@@ -199,6 +214,17 @@ if command -v python3 >/dev/null 2>&1; then
     printf '\n\n… truncated at 1000 chars of 199994. Re-run with -c to read more.\n'
   } >"$EXP"
   expect_out 'python3 oversized: cap + note'
+
+  # Python counts Unicode characters even when Bash runs in the C locale.
+  printf '<p>éé</p>' >"$FIX"
+  fixture "$FIX"
+  LC_ALL=C run_wfetch -c 1 https://example.test/utf8
+  expect_st 'python3 UTF-8 under C locale: exit 0' 0
+  { printf '# https://example.test/utf8\n\né\n'
+    printf '\n… truncated at 1 chars of 2. Re-run with -c to read more.\n'
+  } >"$EXP"
+  expect_out 'python3 UTF-8 under C locale: complete character + note'
+  expect_err_empty 'python3 UTF-8 under C locale: stderr clean'
 
   printf 'abc\000def' >"$FIX"
   case_path curl python3
