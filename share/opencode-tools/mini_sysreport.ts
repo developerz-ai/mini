@@ -10,7 +10,8 @@ import path from "path"
  * bash calls and stitch the outputs together itself.
  */
 const SCRIPT = path.join(
-  process.env.MINI_HOME || path.join(os.homedir(), ".cache", "mini"),
+  process.env.MINI_HOME ||
+    path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "mini"),
   "tools",
   "sysreport",
 )
