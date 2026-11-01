@@ -100,7 +100,11 @@ Both end up in context; they answer different questions.
 | Answers | How should I work? | What is true about this box? |
 | Example | "Validate with `nginx -t` before reloading" | "nginx serves api.example.com from /srv/api" |
 | Changes | When you change your mind | When the machine changes |
-| Written by | You, and mini's defaults | `mini remember`, and `mini setup` for hardware |
+| Written by | You, and mini's defaults | `mini remember` → `10-learned.md`; `mini setup` / `mini sudo` → `00-host.md` |
+
+The memory writer creates `$MINI_HOME/memories` (`~/.cache/mini/memories` by
+default) itself, so `00-host.md` is there even on a box where `mini setup`
+never ran — `mini sudo` alone is enough.
 
 Keep behaviour in the prompt and facts in memory. Facts in the prompt go stale
 without anyone noticing; behaviour in memory gets buried under trivia.

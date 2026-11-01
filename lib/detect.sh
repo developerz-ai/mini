@@ -7,6 +7,12 @@
 #   GPU_VENDOR GPU_NAME VRAM_MB
 #   BUDGET_MB   -- memory we can realistically give a model
 #   ACCEL       -- "gpu" or "cpu"
+#   INIT_SYSTEM -- "systemd" or "not systemd"
+#   INIT_PID1   -- PID 1's comm, "unknown" if it cannot be read
+#
+# The two probes detect_init reads are overridable, so a test can drive them:
+#   MINI_SYSTEMD_RUNTIME_DIR -- default /run/systemd/system
+#   MINI_PID1_COMM           -- default /proc/1/comm
 
 detect_os() {
   OS_ID='unknown'; OS_LIKE=''; OS_NAME='unknown'; OS_VERSION=''
@@ -27,10 +33,58 @@ detect_os() {
   export OS_ID OS_LIKE OS_NAME OS_VERSION OS_PLATFORM
 }
 
+# Is systemd the init system?
+#
+# PID 1 is the ground truth: systemd is the init system only when
+# /proc/1/comm reads "systemd" — that is the process that actually is PID 1.
+# Only when that file cannot be read at all does the runtime marker
+# /run/systemd/system decide, and then only as a fallback.
+#
+# The marker alone proves nothing: systemd's tmpfiles.d creates that directory
+# at package-install time, so a stock Debian container image ships it while
+# PID 1 is still the container's own init. Never key this off
+# `command -v systemctl` either — the same image ships that binary, and it
+# answers every query with "System has not been booted with systemd as init
+# system". Neither the OS family nor the distro is evidence.
+#
+# The composed prompt (base + platform module) is written for a systemd box,
+# so on a host without one the diagnosis playbook does not apply.
+detect_init() {
+  # The probes are absolute paths, so a test could not reach them. Both are
+  # overridable; the defaults are the real locations on a Linux host.
+  local runtime_dir="${MINI_SYSTEMD_RUNTIME_DIR:-/run/systemd/system}"
+  local pid1_file="${MINI_PID1_COMM:-/proc/1/comm}"
+
+  INIT_PID1='unknown'
+  local comm=''
+  if [ -r "$pid1_file" ]; then
+    # `|| true`: under `set -e` a probe that fails would abort the caller
+    # (mini doctor) before it ever reaches the Init step.
+    comm=$(head -n1 "$pid1_file" 2>/dev/null | tr -d '[:space:]' || true)
+    if [ -n "$comm" ]; then INIT_PID1="$comm"; fi
+  fi
+
+  if [ "$INIT_PID1" = 'unknown' ]; then
+    # PID 1 could not be read at all — the marker is the only evidence left.
+    if [ -d "$runtime_dir" ]; then
+      INIT_SYSTEM='systemd'
+    else
+      INIT_SYSTEM='not systemd'
+    fi
+  elif [ "$INIT_PID1" = 'systemd' ]; then
+    INIT_SYSTEM='systemd'
+  else
+    # PID 1 is something else. The marker does not get a vote here.
+    INIT_SYSTEM='not systemd'
+  fi
+  export INIT_SYSTEM INIT_PID1
+  return 0
+}
+
 detect_cpu_ram() {
   CPU_CORES=$(nproc 2>/dev/null || echo 1)
   RAM_MB=$(awk '/^MemTotal:/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)
-  DISK_FREE_GB=$(df -BG --output=avail "$HOME" 2>/dev/null | tail -n1 | tr -dc '0-9')
+  DISK_FREE_GB=$(df -BG --output=avail "$HOME" 2>/dev/null | tail -n1 | tr -dc '0-9' || true)
   [ -n "$DISK_FREE_GB" ] || DISK_FREE_GB=0
   export CPU_CORES RAM_MB DISK_FREE_GB
 }
@@ -41,7 +95,7 @@ detect_gpu() {
   # NVIDIA — the only one with a reliable, scriptable VRAM query.
   if has nvidia-smi; then
     local line
-    line=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null | head -n1)
+    line=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null | head -n1 || true)
     if [ -n "$line" ]; then
       GPU_VENDOR='nvidia'
       GPU_NAME=$(printf '%s' "$line" | cut -d, -f1 | sed 's/^ *//;s/ *$//')
@@ -53,10 +107,10 @@ detect_gpu() {
   # AMD via ROCm.
   if [ "$GPU_VENDOR" = 'none' ] && has rocm-smi; then
     local vram
-    vram=$(rocm-smi --showmeminfo vram --csv 2>/dev/null | awk -F, 'NR==2{print $2}' | tr -dc '0-9')
+    vram=$(rocm-smi --showmeminfo vram --csv 2>/dev/null | awk -F, 'NR==2{print $2}' | tr -dc '0-9' || true)
     if [ -n "$vram" ] && [ "$vram" -gt 0 ] 2>/dev/null; then
       GPU_VENDOR='amd'
-      GPU_NAME=$(lspci 2>/dev/null | grep -iE 'vga|display' | grep -i amd | head -n1 | cut -d: -f3- | sed 's/^ *//')
+      GPU_NAME=$(lspci 2>/dev/null | grep -iE 'vga|display' | grep -i amd | head -n1 | cut -d: -f3- | sed 's/^ *//' || true)
       VRAM_MB=$(( vram / 1024 / 1024 ))
     fi
   fi
@@ -65,7 +119,9 @@ detect_gpu() {
   # we cannot measure. Unmeasured VRAM must not inflate the model budget.
   if [ "$GPU_VENDOR" = 'none' ] && has lspci; then
     local vga
-    vga=$(lspci 2>/dev/null | grep -iE 'vga compatible|3d controller' | head -n1 | cut -d: -f3- | sed 's/^ *//')
+    # grep finding no card is a normal answer, not a failure: under
+      # `set -euo pipefail` a non-zero grep aborts the whole run.
+      vga=$(lspci 2>/dev/null | grep -iE 'vga compatible|3d controller' | head -n1 | cut -d: -f3- | sed 's/^ *//' || true)
     if [ -n "$vga" ]; then
       GPU_NAME="$vga"
       case "$vga" in
@@ -120,6 +176,7 @@ detect_sudo() {
 
 detect_all() {
   detect_os
+  detect_init
   detect_cpu_ram
   detect_gpu
   detect_budget
@@ -137,6 +194,7 @@ detect_summary() {
     gpu_line="none detected"
   fi
   printf '  %-10s %s\n' 'OS'     "$OS_NAME (${OS_ID}, platform: ${OS_PLATFORM})"
+  printf '  %-10s %s\n' 'Init'   "${INIT_SYSTEM:-unknown} (PID 1: ${INIT_PID1:-unknown})"
   printf '  %-10s %s cores\n' 'CPU' "$CPU_CORES"
   printf '  %-10s %s MB\n' 'RAM'   "$RAM_MB"
   printf '  %-10s %s\n' 'GPU'     "$gpu_line"

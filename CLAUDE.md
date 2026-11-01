@@ -108,9 +108,10 @@ read runtime state in the install root.
 
 ## Testing
 
-There is no test framework — the checks are plain bash scripts you run by hand.
-Provider and launch selection are covered by `tests/test_provider.sh` — run it
-first.
+mini is a wrapper around two binaries, not a framework, but it does carry plain
+bash tests under `tests/`. Run the offline test scripts first, starting with
+`tests/test_provider.sh` for provider and launch selection, then the manual
+checks:
 
 The webfetch truncation/failure contract has a self-test (`tests/webfetch.sh`).
 When changing capture or truncation, compare output byte for byte against the
@@ -119,6 +120,8 @@ Preserve newlines with a capture sentinel, keep converter failures non-zero,
 and test Python character slicing with multibyte input under `LC_ALL=C`.
 
 ```bash
+bash tests/test_provider.sh      # provider/launch selection
+bash tests/init_test.sh          # init detection + doctor Init step
 bash tests/remote_key_test.sh    # offline, no network, no framework
 ```
 
@@ -132,7 +135,6 @@ on the machine it runs on.
 The remaining wrapper behavior is checked by hand:
 
 ```bash
-bash tests/test_provider.sh                           # provider/launch selection
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
 bash tests/webfetch.sh                               # webfetch truncation + failure contract (PATH-stubbed, no network)
 shellcheck bin/mini lib/*.sh                          # if available

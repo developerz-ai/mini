@@ -224,28 +224,59 @@ compose_agents_md() {
   ok "installed AGENTS.md (base + ${OS_PLATFORM})"
 }
 
-# Facts about this machine, refreshed on every setup. This is what lets a 7B
-# model skip the "what distro is this" round trip and just act.
+# Facts about this machine. Refreshed by `mini setup` and again by `mini sudo`
+# once passwordless sudo is in place. This is what lets a 7B model skip the
+# "what distro is this" round trip and just act.
+#
+# The writer owns its directory: it creates $MINI_HOME/memories when that is
+# missing, because `mini sudo` calls it directly and setup may never have run
+# on this box. A path it cannot create or write is named and the command exits
+# non-zero — a half-written host memory is worse than none, because the agent
+# trusts it. The file is replaced atomically (temp file + mv, as
+# compose_agents_md does), so a failed write cannot truncate what the agent
+# already knows, and the other memory files are never touched.
 write_host_memory() {
-  local f="${MINI_HOME}/memories/00-host.md"
+  local dir="${MINI_HOME}/memories"
+  local f="${dir}/00-host.md"
+  local tmp="${f}.tmp.$$"
+
+  if [ ! -d "$dir" ]; then
+    ensure_dir "$dir" 2>/dev/null || die "cannot create ${dir} — the host memory has nowhere to live"
+    [ -d "$dir" ] || die "cannot create ${dir} — the host memory has nowhere to live"
+  fi
+
   local gpu="none"
   [ -n "${GPU_NAME:-}" ] && gpu="${GPU_NAME}"
-  [ "${VRAM_MB:-0}" -gt 0 ] && gpu="${GPU_NAME} (${VRAM_MB} MB VRAM)"
+  [ -n "${GPU_NAME:-}" ] && [ "${VRAM_MB:-0}" -gt 0 ] && gpu="${GPU_NAME} (${VRAM_MB} MB VRAM)"
 
-  cat > "$f" <<EOF
+  # Defensive defaults: the writer must not depend on detect.sh having set
+  # every variable, so an unset one falls back to a placeholder instead of
+  # aborting the write.
+  local os_name="${OS_NAME:-unknown}" os_id="${OS_ID:-unknown}" os_version="${OS_VERSION:-unknown}"
+  local cpu_cores="${CPU_CORES:-unknown}" ram_mb="${RAM_MB:-unknown}" disk_free="${DISK_FREE_GB:-unknown}"
+
+  # On a host without systemd the agent must know before it starts, or it
+  # runs `systemctl --failed` and reports a broken machine that is fine.
+  local init_note=''
+  if [ "${INIT_SYSTEM:-unknown}" != 'systemd' ]; then
+    init_note=' — systemd is not PID 1, so systemctl and journalctl do not work here'
+  fi
+
+  {
+    cat <<EOF
 # This machine
 
-Written by \`mini setup\` on $(date -u '+%Y-%m-%d'). Facts, not preferences.
+Written by \`mini setup\` or \`mini sudo\` on $(date -u '+%Y-%m-%d'). Facts, not preferences.
 
 - Hostname: $(hostname)
-- OS: ${OS_NAME} (id \`${OS_ID}\`, version \`${OS_VERSION}\`)
+- OS: ${os_name} (id \`${os_id}\`, version \`${os_version}\`)
 - Package manager: apt (debian family)
-- Init: $( [ -d /run/systemd/system ] && echo systemd || echo 'not systemd' )
+- Init: ${INIT_SYSTEM:-unknown} (PID 1: ${INIT_PID1:-unknown})${init_note}
 - Shell: ${SHELL:-/bin/bash}
-- CPU: ${CPU_CORES} cores
-- RAM: ${RAM_MB} MB
+- CPU: ${cpu_cores} cores
+- RAM: ${ram_mb} MB
 - GPU: ${gpu}
-- Disk free in \$HOME: ${DISK_FREE_GB} GB
+- Disk free in \$HOME: ${disk_free} GB
 - User: $(id -un) (uid $(id -u))
 - Root access: $(case "${SUDO_MODE:-}" in
     root) echo 'running as root — no sudo needed' ;;
@@ -256,6 +287,10 @@ Written by \`mini setup\` on $(date -u '+%Y-%m-%d'). Facts, not preferences.
   esac)
 - Container: $( [ -f /.dockerenv ] && echo yes || echo 'no (or not detectable)' )
 EOF
+  } > "$tmp" || { rm -f "$tmp" 2>/dev/null || true; die "cannot write ${f} — the host memory was not updated"; }
+
+  mv -f "$tmp" "$f" || { rm -f "$tmp" 2>/dev/null || true; die "cannot replace ${f} — the host memory was not updated"; }
+
   ok "wrote host memory"
 }
 
@@ -291,9 +326,13 @@ cmd_sudo() {
 
   case "$SUDO_MODE" in
     root)
-      ok "running as root — nothing to do"; return 0 ;;
+      ok "running as root — nothing to do"
+      write_host_memory
+      return 0 ;;
     nopasswd)
-      ok "passwordless sudo already works — the agent can install packages"; return 0 ;;
+      ok "passwordless sudo already works — the agent can install packages"
+      write_host_memory
+      return 0 ;;
     none)
       err "sudo is not installed on this box"
       dim "  install it as root:  apt-get install -y sudo && usermod -aG sudo ${user}"
@@ -568,4 +607,8 @@ main() {
   esac
 }
 
-main "$@"
+# Dispatch only when this file is executed. Tests source it to call the
+# functions directly against a temporary MINI_HOME; sourcing must not run the CLI.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  main "$@"
+fi

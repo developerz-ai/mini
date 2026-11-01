@@ -34,12 +34,13 @@ When you do hive, a big task is not one agent doing more; it is a **team sharing
 
 ### Who runs which checks
 
-No test suite — mini wraps two binaries, so the checks are syntax, lint, doctor and a real turn.
+mini wraps two binaries, so most checks are syntax, lint, doctor and a real turn — but the repo does carry shell tests under `tests/`, and they need no live model.
 
 | | Agent (per iteration) | Coordinator (once, at the end) |
 |---|---|---|
 | syntax | `bash -n <only the files it edited>` | `bash -n bin/mini lib/*.sh platforms/*.sh install.sh` |
 | lint | `shellcheck <only the files it edited>` (if installed) | `shellcheck bin/mini lib/*.sh` |
+| tests | `bash tests/init_test.sh` (when the slice touches init detection or doctor's Init step) | `bash tests/init_test.sh` |
 | doctor + live | — | `mini doctor` clean; `mini "what is wrong with this machine"`; then `mini model qwen2.5-coder:3b && mini "check disk"` |
 
 An agent owns *its own files*; whole-repo green is the coordinator's job and nobody else's. **Never let an agent run `mini doctor` or a live turn** — one ollama server, `OLLAMA_NUM_PARALLEL=1`, one resident model and one generated `opencode.json` mean two concurrent turns thrash, and a cold CPU prefill is already minutes. Queue any turn a slice needs and run it yourself. Selection-path coverage is not parallelisable either: the GPU and no-GPU paths in `lib/detect.sh` / `lib/models.sh` differ and you have one box — say which you exercised rather than claiming both.

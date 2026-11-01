@@ -84,6 +84,16 @@ doctor_run() {
     d_fix "see platforms/README.md to add ${OS_ID}"
   fi
 
+  step "Init"
+  if [ "${INIT_SYSTEM:-not systemd}" = 'systemd' ]; then
+    d_ok "systemd is running — the composed diagnosis playbook applies"
+  else
+    d_warn "systemd is not running (PID 1: ${INIT_PID1:-unknown}) — the composed diagnosis playbook does not apply"
+    d_fix "systemd must be the init system (PID 1) — on a VM or bare metal, install and boot systemd; installing the systemctl package alone changes nothing"
+    d_fix "in a container, start systemd as init — the image needs systemd installed first (a stock Debian image has no /sbin/init): docker run --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw <image> /sbin/init"
+    d_fix "to keep mini on this host, edit ${MINI_HOME}/AGENTS.md (default ~/.cache/mini/AGENTS.md) and replace the systemd steps with this host's init"
+  fi
+
   step "Privileges"
   case "$SUDO_MODE" in
     root)     d_ok "running as root" ;;
@@ -139,18 +149,43 @@ doctor_run() {
   # Presence only: four independent lines, and none of them claims a service is
   # running or that anything was installed. A missing tool gets a fix line
   # printed by the platform module — doctor never executes an install.
+  #
+  # systemctl is the exception: a binary on PATH is not a working tool.
+  # Without systemd as PID 1 it answers every query with "System has not been
+  # booted with systemd as init system", so on such a host doctor says that
+  # instead of ticking the box — and never tells the user to install it,
+  # because the package is not the problem.
   local cmd
   for cmd in ss systemctl ufw docker; do
+    local no_systemd=0
+    if [ "$cmd" = 'systemctl' ] && [ "${INIT_SYSTEM:-not systemd}" != 'systemd' ]; then
+      no_systemd=1
+    fi
     if has "$cmd"; then
-      d_ok "$cmd"
+      if [ "$no_systemd" -eq 1 ]; then
+        d_warn "systemctl is installed but systemd is not PID 1 — systemctl and journalctl do not work here"
+        d_fix "use this host's own init instead (see the Init step); installing the systemctl package alone changes nothing"
+      else
+        d_ok "$cmd"
+      fi
     else
       case "$cmd" in
         ss)        d_warn "ss missing — the agent cannot inspect listening ports or connections" ;;
-        systemctl) d_warn "systemctl missing — the agent cannot inspect or control services" ;;
+        systemctl)
+          if [ "$no_systemd" -eq 1 ]; then
+            d_warn "systemctl missing — and systemd is not PID 1, so it would not work here either"
+          else
+            d_warn "systemctl missing — the agent cannot inspect or control services"
+          fi
+          ;;
         ufw)       d_warn "ufw missing — the agent cannot check or change the firewall" ;;
         docker)    d_warn "docker missing — the agent cannot inspect or manage containers" ;;
       esac
-      d_fix "$(platform_install_cmd_for "$cmd")"
+      if [ "$no_systemd" -eq 1 ]; then
+        d_fix "use this host's own init instead (see the Init step); installing the systemctl package alone changes nothing"
+      else
+        d_fix "$(platform_install_cmd_for "$cmd")"
+      fi
     fi
   done
 
