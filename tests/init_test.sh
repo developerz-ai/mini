@@ -269,6 +269,122 @@ else
   ok "the container fix line is printed on every non-systemd host"
 fi
 
+# ------------------------------------------------- doctor counter oracle ----
+#
+# The checks above read the printed "!" and grep the source for d_fail. Both
+# are shadows of the requirement: a check that prints "!" and still calls
+# d_fail passes both. The requirement is about what doctor *counts* — a host
+# without systemd is healthy, so nothing in the Init step may add a failure,
+# and doctor must exit 0.
+#
+# So run doctor for real against a host that is healthy in every respect
+# except systemd, with every unrelated check stubbed out, and read the
+# counters doctor keeps itself. Each step title is followed by the counters
+# as they stand before that step runs, so a single step's contribution can be
+# measured instead of guessed.
+
+doctor_stub_case() { # <pid1-comm-file> -> doctor output plus a dz-result line
+  local comm="$1"
+  local home="${TMP}/home-stub-$(basename "$comm")"
+  mkdir -p "$home/memories"
+  cat > "$home/config" <<'CFG'
+MINI_PROVIDER=local
+MINI_BASE_MODEL=stub-model:1b
+MINI_MODEL=stub-model:1b-64k
+MINI_CTX=65536
+CFG
+  (
+    export MINI_HOME="$home"
+    export MINI_SYSTEMD_RUNTIME_DIR="$ABSENT"
+    export MINI_PID1_COMM="$comm"
+    export NO_COLOR=1
+    # shellcheck disable=SC1090
+    . "$MINI_BIN"
+    # doctor's exit status is what is under test here, not a reason to abort
+    # the run before the counters are reported.
+    set +e
+
+    # The host, minus systemd: healthy in every other respect.
+    detect_all() {
+      OS_ID='debian'; OS_LIKE='debian'; OS_NAME='Debian GNU/Linux 12'; OS_VERSION='12'
+      OS_PLATFORM='debian'
+      CPU_CORES=4; RAM_MB=16384; DISK_FREE_GB=100
+      GPU_VENDOR='nvidia'; GPU_NAME='stub-gpu'; VRAM_MB=8192
+      BUDGET_MB=8192; ACCEL='gpu'
+      SUDO_MODE='nopasswd'
+      export OS_ID OS_LIKE OS_NAME OS_VERSION OS_PLATFORM
+      export CPU_CORES RAM_MB DISK_FREE_GB GPU_VENDOR GPU_NAME VRAM_MB
+      export BUDGET_MB ACCEL SUDO_MODE
+      detect_init   # the real probe — the fact under test
+    }
+
+    # Every unrelated check is stubbed: opencode and the tools are installed,
+    # ollama serves, the model is present, every dependency and host tool is
+    # on PATH. What is left is the init fact and nothing else.
+    has() { return 0; }
+    ollama() { printf 'ollama version is 0.0.0\n'; }
+    ollama_up() { return 0; }
+    ollama_version() { printf '0.0.0\n'; }
+    ollama_public_bind() { return 0; }
+    ollama_is_loopback() { return 0; }
+    ollama_has_model() { return 0; }
+    models_recommend() { printf 'stub-model:1b\n'; }
+    doctor_opencode_section() { :; }
+    doctor_tools_section() { :; }
+
+    # Report the counters with every step title, so the step's own
+    # contribution can be read off the run.
+    step() { printf '\n%s\n' "$*"; printf 'dz-counters %s %s\n' "$DOCTOR_FAILS" "$DOCTOR_WARNS"; }
+
+    doctor_run
+    printf 'dz-result %s %s %s\n' "$?" "$DOCTOR_FAILS" "$DOCTOR_WARNS"
+  ) 2>&1
+}
+
+# The counters doctor kept, as the stubbed run reports them.
+stub_result() { # <output> rc|fails|warns
+  printf '%s\n' "$1" | awk -v f="$2" '
+    $1 == "dz-result" {
+      if (f == "rc") print $2; else if (f == "fails") print $3; else print $4
+      exit
+    }'
+}
+
+# The counters right after a step title — that is, before that step ran.
+stub_counters_at() { # <output> <step title> -> "fails warns"
+  printf '%s\n' "$1" | awk -v t="$2" '
+    $0 == t { f = 1; next }
+    f && $1 == "dz-counters" { print $2, $3; exit }'
+}
+
+printf 'doctor counters on a stubbed host\n'
+
+stub_systemd="$(doctor_stub_case "$COMM_SYSTEMD")"
+stub_nosystemd="$(doctor_stub_case "$COMM_BASH")"
+
+# A stubbed host with systemd is healthy outright.
+expect "a healthy systemd host fails no check" "0" "$(stub_result "$stub_systemd" fails)"
+expect "a healthy systemd host warns about nothing" "0" "$(stub_result "$stub_systemd" warns)"
+expect "a healthy systemd host exits 0" "0" "$(stub_result "$stub_systemd" rc)"
+
+# A stubbed host without systemd is still healthy: warnings, never failures.
+expect "a healthy non-systemd host fails no check" "0" "$(stub_result "$stub_nosystemd" fails)"
+expect "a healthy non-systemd host exits 0" "0" "$(stub_result "$stub_nosystemd" rc)"
+
+# The Init step's own contribution: its title to the next step's title.
+init_before="$(stub_counters_at "$stub_nosystemd" 'Init')"
+init_after="$(stub_counters_at "$stub_nosystemd" 'Privileges')"
+expect "the Init step adds no failed check" "0" \
+  "$(( ${init_after%% *} - ${init_before%% *} ))"
+expect "the Init step adds exactly one warning" "1" \
+  "$(( ${init_after##* } - ${init_before##* } ))"
+
+# And the same difference seen from the outside, host against host.
+expect "a non-systemd host adds no failed check over a systemd one" "0" \
+  "$(( $(stub_result "$stub_nosystemd" fails) - $(stub_result "$stub_systemd" fails) ))"
+expect "a non-systemd host adds exactly two warnings (Init, systemctl)" "2" \
+  "$(( $(stub_result "$stub_nosystemd" warns) - $(stub_result "$stub_systemd" warns) ))"
+
 printf 'doctor Host tools step\n'
 
 # systemctl is listed, but on a host without systemd a binary is not a
