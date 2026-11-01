@@ -7,6 +7,10 @@
 
 OPENCODE_BIN_DIR="${HOME}/.opencode/bin"
 
+# The one command that configures remote inference. Every "remote is not set
+# up" failure names it, so the fix is never a guess.
+MINI_REMOTE_FIX='mini remote <url> <model> [key]'
+
 opencode_bin() {
   if has opencode; then command -v opencode
   elif [ -x "${OPENCODE_BIN_DIR}/opencode" ]; then printf '%s\n' "${OPENCODE_BIN_DIR}/opencode"
@@ -51,7 +55,75 @@ opencode_command_block() {
 CMDS
 }
 
-# Writes $MINI_HOME/opencode.json.
+#   opencode_merge_commands <fresh> <previous>
+#
+# Carries the user's own slash commands from the previous config into a freshly
+# generated one. A command key that is not in the fresh config's command block
+# was added by the user — there is no marker file, the key set is the marker —
+# and is carried over verbatim; keys mini manages always take the fresh value.
+# python3-opportunistic, exactly like opencode_validate_config. Returns 0 when
+# the merge ran or there was nothing to carry; 1 when it could not — no
+# python3, or the previous file is not JSON mini can read — so the caller can
+# preserve the old file instead of destroying it.
+opencode_merge_commands() {
+  local fresh="$1" old="$2"
+  [ -f "$old" ] || return 0
+  has python3 || return 1
+  python3 - "$old" "$fresh" <<'PY' || return 1
+import json, sys
+
+old_path, fresh_path = sys.argv[1:3]
+try:
+    with open(old_path, encoding="utf-8") as f:
+        old_cmds = json.load(f).get("command")
+    with open(fresh_path, encoding="utf-8") as f:
+        fresh = json.load(f)
+except Exception:
+    sys.exit(1)
+
+# A missing or non-object command block in the old config means there is
+# nothing to carry — a successful no-op, not a merge failure.
+if not isinstance(old_cmds, dict):
+    sys.exit(0)
+
+fresh_cmds = fresh.setdefault("command", {})
+if not isinstance(fresh_cmds, dict):
+    sys.exit(1)
+
+# The fresh block holds exactly mini's own commands; anything else in the old
+# block is the user's and is carried over untouched.
+carried = {k: v for k, v in old_cmds.items() if k not in fresh_cmds}
+if not carried:
+    sys.exit(0)
+
+fresh_cmds.update(carried)
+with open(fresh_path, "w", encoding="utf-8") as f:
+    json.dump(fresh, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+PY
+}
+
+# Replace the live config with a freshly generated one.
+#   opencode_install_config <fresh-tmp> <live>
+#
+# The merge runs first; when it cannot (no python3, or an old config that does
+# not parse), the old file is kept as <live>.bak.XXXXXX and the user is warned — a
+# regeneration never silently destroys their edits. Only a config that
+# validates replaces the live one.
+opencode_install_config() {
+  local fresh="$1" live="$2" backup
+  if ! opencode_merge_commands "$fresh" "$live"; then
+    # Reserve a unique path so repeated fallbacks never erase recovery data.
+    backup=$(mktemp "${live}.bak.XXXXXX") || return 1
+    cp -p "$live" "$backup" || return 1
+    warn "could not carry your custom slash commands into the new config — the previous config is kept as ${backup}"
+  fi
+  opencode_validate_config "$fresh"
+  mv -f "$fresh" "$live"
+}
+
+# Writes $MINI_HOME/opencode.json, carrying the user's own slash commands over
+# from the previous config (see opencode_install_config).
 #   $1 = variant model id (e.g. mini-qwen2.5-coder-7b:32k)
 #   $2 = context window
 #
@@ -69,6 +141,7 @@ CMDS
 # task/todo* are planning scaffolding a small local model uses badly.
 opencode_write_config() {
   local model="$1" ctx="$2" out="${MINI_HOME}/opencode.json"
+  local tmp="${out}.tmp"
   local label="mini · ${model}"
   local out_tokens=$(( ctx / 8 ))
   [ "$out_tokens" -gt 16384 ] && out_tokens=16384
@@ -101,7 +174,9 @@ opencode_write_config() {
     return $?
   fi
 
-  cat > "$out" <<JSON
+  # Generated into a sibling file; opencode_install_config merges the user's
+  # own slash commands, validates, and only then replaces the live config.
+  cat > "$tmp" <<JSON
 {
   "\$schema": "https://opencode.ai/config.json",
   "provider": {
@@ -143,7 +218,7 @@ opencode_write_config() {
 $(opencode_command_block)
 }
 JSON
-  opencode_validate_config "$out"
+  opencode_install_config "$tmp" "$out"
   ok "wrote ${out}"
 }
 
@@ -161,17 +236,68 @@ except Exception as e: print('   ', e)" "$file" 2>/dev/null
   die "this is a bug in mini — please report it"
 }
 
+# Does the generated config already describe this remote setup?
+#
+# `mini remote` writes the config keys before it writes opencode.json, so a
+# write that dies half way leaves the two out of step: the launch names
+# mini-remote/<model> while the config still defines the local ollama
+# provider. opencode then answers "model not found" — a broken-model symptom
+# for a broken-config cause.
+opencode_remote_config_current() {
+  local url="$1" model="$2" out="${MINI_HOME}/opencode.json"
+  [ -f "$out" ] || return 1
+  grep -Fq '"mini-remote": {' "$out" || return 1
+  grep -Fq "\"model\": \"mini-remote/$(json_escape "$model")\"" "$out" || return 1
+  grep -Fq "\"baseURL\": \"$(json_escape "$url")\"" "$out" || return 1
+  return 0
+}
+
+# The provider/model opencode is launched with.
+#
+# The generated config decides which provider is live: `ollama` for local
+# inference, `mini-remote` for an external OpenAI-compatible endpoint. The
+# launch must name the SAME provider/model the config was written with —
+# otherwise opencode looks for a model that does not exist and fails with
+# something that reads like a broken model rather than a broken config.
+#
+# Remote mode needs no local model at all: MINI_MODEL is not consulted.
+opencode_model_ref() {
+  local url model
+  if [ "$(cfg_get MINI_PROVIDER)" = 'remote' ]; then
+    url=$(cfg_get MINI_REMOTE_URL)
+    model=$(cfg_get MINI_REMOTE_MODEL)
+    [ -n "$url" ]   || die "no remote URL configured — run: ${MINI_REMOTE_FIX}"
+    [ -n "$model" ] || die "no remote model configured — run: ${MINI_REMOTE_FIX}"
+    # The config has to declare the provider/model the launch names. If the
+    # two are out of step, rewrite the config instead of letting opencode
+    # fail on a model it was never told about.
+    #
+    # Its output goes to stderr: stdout here is the ref, and the caller
+    # captures it.
+    if ! opencode_remote_config_current "$url" "$model"; then
+      opencode_write_remote_config >&2 \
+        || die "could not write ${MINI_HOME}/opencode.json — run: ${MINI_REMOTE_FIX}"
+    fi
+    printf '%s\n' "mini-remote/${model}"
+  else
+    model=$(cfg_get MINI_MODEL)
+    [ -n "$model" ] || die "no model configured — run: mini setup"
+    printf '%s\n' "ollama/${model}"
+  fi
+}
+
 # Launch opencode against mini's config, in the caller's current directory.
 #
 # Yolo (--auto) is the default: this is a local model on your own box and
 # approving every `ls` kills the point. `mini --safe` restores the prompts.
 opencode_launch() {
-  local bin model
+  local bin ref
   bin=$(opencode_bin) || die "opencode is not installed — run: mini setup"
-  model=$(cfg_get MINI_MODEL)
-  [ -n "$model" ] || die "no model configured — run: mini setup"
+  # `die` inside the substitution only ends the subshell, so carry the
+  # failure out explicitly instead of relying on errexit.
+  ref=$(opencode_model_ref) || exit 1
 
-  local -a flags=(-m "ollama/${model}")
+  local -a flags=(-m "$ref")
   [ "${MINI_SAFE:-0}" = '1' ] || flags+=(--auto)
 
   OPENCODE_CONFIG="${MINI_HOME}/opencode.json" \
@@ -188,22 +314,24 @@ opencode_launch() {
 # honest answer for a machine too slow to run a model locally.
 opencode_write_remote_config() {
   local out="${MINI_HOME}/opencode.json"
+  local tmp="${out}.tmp"
   local url model ctx key out_tokens
   url=$(cfg_get MINI_REMOTE_URL)
   model=$(cfg_get MINI_REMOTE_MODEL)
   ctx=$(cfg_get MINI_CTX); [ -n "$ctx" ] || ctx=131072
   key=$(cat "${MINI_HOME}/api-key" 2>/dev/null || printf '')
 
-  [ -n "$url" ] || die "no remote URL configured — run: mini remote"
-  [ -n "$model" ] || die "no remote model configured — run: mini remote"
+  [ -n "$url" ] || die "no remote URL configured — run: ${MINI_REMOTE_FIX}"
+  [ -n "$model" ] || die "no remote model configured — run: ${MINI_REMOTE_FIX}"
 
   out_tokens=$(( ctx / 8 ))
   [ "$out_tokens" -gt 16384 ] && out_tokens=16384
 
   # The file carries an API key, so it is created 0600 before anything lands in
-  # it — never world-readable for even an instant.
-  ( umask 077; : > "$out" )
-  cat > "$out" <<JSON
+  # it — never world-readable for even an instant. The mode survives the merge
+  # (python3 rewrites the file in place) and the final mv into place.
+  ( umask 077; : > "$tmp" )
+  cat > "$tmp" <<JSON
 {
   "\$schema": "https://opencode.ai/config.json",
   "provider": {
@@ -246,8 +374,8 @@ opencode_write_remote_config() {
 $(opencode_command_block)
 }
 JSON
-  chmod 600 "$out"
-  opencode_validate_config "$out"
+  chmod 600 "$tmp"
+  opencode_install_config "$tmp" "$out"
   ok "wrote ${out} ${C_DIM}(remote: ${url})${C_RESET}"
 }
 
@@ -258,10 +386,9 @@ JSON
 # can run commands on the box.
 opencode_web() {
   local mode="$1"; shift
-  local bin model host='127.0.0.1' pw
+  local bin ref host='127.0.0.1' pw
   bin=$(opencode_bin) || die "opencode is not installed — run: mini setup"
-  model=$(cfg_get MINI_MODEL)
-  [ -n "$model" ] || die "no model configured — run: mini setup"
+  ref=$(opencode_model_ref) || exit 1
 
   if [ "${1:-}" = '--lan' ]; then
     host='0.0.0.0'
@@ -282,17 +409,16 @@ opencode_web() {
   OLLAMA_HOST="$OLLAMA_HOST_ADDR" \
   OPENCODE_SERVER_PASSWORD="$pw" \
   PATH="${MINI_HOME}/tools:${PATH}" \
-    exec "$bin" "$mode" --hostname "$host" -m "ollama/${model}" "$@"
+    exec "$bin" "$mode" --hostname "$host" -m "$ref" "$@"
 }
 
 # One-shot: `mini "why is nginx down"`.
 opencode_run() {
-  local bin model
+  local bin ref
   bin=$(opencode_bin) || die "opencode is not installed — run: mini setup"
-  model=$(cfg_get MINI_MODEL)
-  [ -n "$model" ] || die "no model configured — run: mini setup"
+  ref=$(opencode_model_ref) || exit 1
 
-  local -a flags=(run -m "ollama/${model}")
+  local -a flags=(run -m "$ref")
   [ "${MINI_SAFE:-0}" = '1' ] || flags+=(--auto)
 
   OPENCODE_CONFIG="${MINI_HOME}/opencode.json" \

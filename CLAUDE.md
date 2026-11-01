@@ -109,6 +109,9 @@ read runtime state in the install root.
 ## Testing
 
 There is no test framework — the checks are plain bash scripts you run by hand.
+Provider and launch selection are covered by `tests/test_provider.sh` — run it
+first.
+
 The webfetch truncation/failure contract has a self-test (`tests/webfetch.sh`).
 When changing capture or truncation, compare output byte for byte against the
 fixture with zero, one, and multiple trailing newlines, below and at the cap.
@@ -122,13 +125,14 @@ bash tests/remote_key_test.sh    # offline, no network, no framework
 `tests/remote_key_test.sh` pins one thing: the API-key prompt of `mini remote`.
 With `MINI_YES=1` the prompt is skipped, nothing is read from stdin, and an
 empty `0600` key file is written. Without `MINI_YES` the prompt still reads the
-key from stdin and that key lands in the `0600` key file. That script covers
-nothing else. It stubs the host GPU probes, so the result does not depend on the
-machine it runs on.
+key from stdin and that key lands in the `0600` key file. This script covers
+only that prompt. It stubs the host GPU probes, so the result does not depend
+on the machine it runs on.
 
-The wrapper itself is checked by hand:
+The remaining wrapper behavior is checked by hand:
 
 ```bash
+bash tests/test_provider.sh                           # provider/launch selection
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
 bash tests/webfetch.sh                               # webfetch truncation + failure contract (PATH-stubbed, no network)
 shellcheck bin/mini lib/*.sh                          # if available
