@@ -27,9 +27,12 @@ it.
 | `share/opencode-tools/*.ts` | TS definitions that expose those to opencode |
 | `share/models.tsv` | The model registry. Dated. |
 | `install.sh` | curl-to-bash entry point |
+| `tests/` | Offline bash checks. No framework — run them by hand. |
 
-Runtime state is `~/.cache/mini/` (`$MINI_HOME`). Never write program files
-there; never read state from the install root.
+Runtime state is `~/.cache/mini/` (`$MINI_HOME`). The sole program-file exception
+is `$MINI_HOME/tools`, where mini installs shipped scripts copied from
+`share/tools`. Never write other program files in `$MINI_HOME`; never store or
+read runtime state in the install root.
 
 ## Rules
 
@@ -105,7 +108,21 @@ there; never read state from the install root.
 
 ## Testing
 
-The webfetch truncation/failure contract has a self-test; everything else is verified by running:
+There is no test framework — the checks are plain bash scripts you run by hand.
+The webfetch truncation/failure contract has a self-test (`tests/webfetch.sh`).
+
+```bash
+bash tests/remote_key_test.sh    # offline, no network, no framework
+```
+
+`tests/remote_key_test.sh` pins one thing: the API-key prompt of `mini remote`.
+With `MINI_YES=1` the prompt is skipped, nothing is read from stdin, and an
+empty `0600` key file is written. Without `MINI_YES` the prompt still reads the
+key from stdin and that key lands in the `0600` key file. That script covers
+nothing else. It stubs the host GPU probes, so the result does not depend on the
+machine it runs on.
+
+The wrapper itself is checked by hand:
 
 ```bash
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax

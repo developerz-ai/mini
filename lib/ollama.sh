@@ -48,7 +48,7 @@ ollama_systemd_managed() {
 # still gets fixed — the common case, since ollama's installer starts it.
 ollama_tune() {
   if ollama_systemd_managed; then
-    ollama_write_systemd_dropin
+    ollama_write_systemd_dropin || true
   elif [ -f "$OLLAMA_PIDFILE" ]; then
     dim "ollama runs as a mini-managed process — tuning applies on next start"
   else
@@ -64,15 +64,16 @@ ollama_bind_local() {
   fi
 
   if ollama_systemd_managed; then
-    rm -f "${MINI_HOME}/.dropin-cache" 2>/dev/null || true
+    # Gate first: a missing passwordless sudo dies with its fix command here,
+    # not as a generic write failure inside the writer below.
     _mini_sudo mkdir -p /etc/systemd/system/ollama.service.d 2>/dev/null \
       || die "need sudo to rebind the systemd service — run: mini sudo"
-    printf '[Service]\nEnvironment="OLLAMA_NUM_PARALLEL=1"\nEnvironment="OLLAMA_MAX_LOADED_MODELS=1"\nEnvironment="OLLAMA_KEEP_ALIVE=30m"\nEnvironment="OLLAMA_HOST=%s"\n' \
-      "$OLLAMA_HOST_ADDR" \
-      | _mini_sudo tee /etc/systemd/system/ollama.service.d/10-mini.conf >/dev/null \
-      || die "could not write the drop-in"
-    _mini_sudo systemctl daemon-reload
-    _mini_sudo systemctl restart ollama
+    ollama_write_systemd_dropin \
+      || die "could not apply tuning while rebinding"
+    # A matching drop-in early-returns from the writer without a restart;
+    # a stopped unit would stay stopped and the wait below would time out.
+    ollama_up || _mini_sudo systemctl restart ollama \
+      || die "could not restart ollama while rebinding"
     ollama_wait 30 || die "ollama did not come back up"
     ok "ollama rebound to ${OLLAMA_HOST_ADDR}"
   else
@@ -93,10 +94,13 @@ ollama_start() {
 
   if ollama_systemd_managed; then
     info "starting ollama (systemd)"
-    ollama_write_systemd_dropin
-    sudo systemctl start ollama >/dev/null 2>&1 || true
-    ollama_wait 30 && return 0
-    warn "systemd unit did not come up — falling back to a user process"
+    ollama_write_systemd_dropin || true
+    if _mini_sudo systemctl start ollama >/dev/null 2>&1; then
+      ollama_wait 30 && return 0
+      warn "systemd unit did not come up — falling back to a user process"
+    else
+      warn "systemctl start ollama failed — noninteractive privileges may be unavailable; optionally run: mini sudo — falling back to a user process"
+    fi
   fi
 
   info "starting ollama"
@@ -121,6 +125,8 @@ ollama_start() {
 
 # The same tuning as the user-process path, for the systemd-managed server.
 # Written as a drop-in so ollama's own packaging can still update the unit.
+# Returns non-zero when writing or applying fails: best-effort callers `|| true` it,
+# ollama_bind_local dies on it.
 ollama_write_systemd_dropin() {
   local dir='/etc/systemd/system/ollama.service.d'
   local file="${dir}/10-mini.conf"
@@ -142,21 +148,39 @@ Environment=\"OLLAMA_HOST=${OLLAMA_HOST_ADDR}\""
   [ "${SUDO_MODE:-}" = 'password' ] && return 0
   [ "${SUDO_MODE:-}" = 'none' ] && return 0
 
-  if [ -f "$file" ] && [ "$(cat "$file" 2>/dev/null)" = "$want" ]; then
+  # A matching file is not proof it was applied: a previous reload/restart
+  # may have failed while the old (possibly public) listener stayed healthy.
+  if [ ! -e "${file}.pending" ] && [ -f "$file" ] && [ "$(cat "$file" 2>/dev/null)" = "$want" ]; then
     return 0
   fi
 
   # The drop-in directory does not exist until something creates it.
   _mini_sudo mkdir -p "$dir" 2>/dev/null || {
     warn "could not create ${dir} — ollama keeps its defaults"
-    return 0
+    return 1
+  }
+  # Persist before writing, so failures (or interruption) cannot enable the
+  # content-match shortcut on the next invocation. Keep the drop-in for retry.
+  _mini_sudo touch "${file}.pending" 2>/dev/null || {
+    warn "could not mark ${file} pending — check sudo access with: mini sudo"
+    return 1
   }
   printf '%s\n' "$want" | _mini_sudo tee "$file" >/dev/null 2>&1 || {
     warn "could not write ${file} — ollama keeps its defaults"
-    return 0
+    return 1
   }
-  _mini_sudo systemctl daemon-reload >/dev/null 2>&1 || true
-  _mini_sudo systemctl restart ollama >/dev/null 2>&1 || true
+  _mini_sudo systemctl daemon-reload >/dev/null 2>&1 || {
+    warn "could not reload systemd — run: sudo -n systemctl daemon-reload"
+    return 1
+  }
+  _mini_sudo systemctl restart ollama >/dev/null 2>&1 || {
+    warn "could not restart ollama — run: sudo -n systemctl restart ollama"
+    return 1
+  }
+  _mini_sudo rm -f "${file}.pending" 2>/dev/null || {
+    warn "could not clear pending state — run: sudo -n rm -f ${file}.pending"
+    return 1
+  }
   ok "tuned ollama for agent use (serialised requests, 30m keep-alive)"
 }
 
