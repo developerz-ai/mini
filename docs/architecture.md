@@ -55,11 +55,12 @@ Unmeasurable VRAM never inflates the budget. If `nvidia-smi` and `rocm-smi` are
 both absent, a card found via `lspci` is named in the report but counts as zero
 — a driver-less GPU cannot run anything.
 
-For auto-selection, `lib/models.sh` walks `share/models.tsv` best → smallest.
-On CPU it skips registry rows before the `qwen3:4b-instruct` cap, then takes the
-first row that fits starting at that cap row. GPU selection is uncapped and
-takes the first fitting row from the full registry. `mini model <id>` overrides
-this auto-selection.
+For auto-selection, `lib/models.sh` walks `share/models.tsv` best → smallest and
+takes the first row that fits. On CPU it skips registry rows before the
+`qwen3:4b-instruct` cap, then takes the first row that fits starting at that cap
+row: a 7B model generates about 2.5 tokens a second on CPU, which is not an
+interactive agent. GPU selection is uncapped and takes the first fitting row
+from the full registry. `mini model <id>` overrides this auto-selection.
 
 ## The context variant
 

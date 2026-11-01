@@ -96,8 +96,8 @@ mini config      # which model
 nvidia-smi       # is the GPU actually being used
 ```
 
-On CPU, expect a few tokens per second for a 7B model. That is normal and it is
-why mini caps CPU auto-selection at 7B.
+On CPU, expect a few tokens per second. That is normal and it is why mini caps
+CPU auto-selection at `qwen3:4b-instruct`.
 
 Two things dominate the wait, and only one of them is the model:
 
