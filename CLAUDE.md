@@ -113,6 +113,12 @@ bash tests under `tests/`. Run the offline test scripts first, starting with
 `tests/test_provider.sh` for provider and launch selection, then the manual
 checks:
 
+The webfetch truncation/failure contract has a self-test (`tests/webfetch.sh`).
+When changing capture or truncation, compare output byte for byte against the
+fixture with zero, one, and multiple trailing newlines, below and at the cap.
+Preserve newlines with a capture sentinel, keep converter failures non-zero,
+and test Python character slicing with multibyte input under `LC_ALL=C`.
+
 ```bash
 bash tests/test_provider.sh      # provider/launch selection
 bash tests/init_test.sh          # init detection + doctor Init step
@@ -130,6 +136,7 @@ The remaining wrapper behavior is checked by hand:
 
 ```bash
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
+bash tests/webfetch.sh                               # webfetch truncation + failure contract (PATH-stubbed, no network)
 shellcheck bin/mini lib/*.sh                          # if available
 mini doctor                                           # must be clean
 mini "what is wrong with this machine"                # end to end
