@@ -109,13 +109,21 @@ There is no test suite; it is a wrapper around two binaries. Verify by running:
 
 ```bash
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
-shellcheck bin/mini lib/*.sh                          # if available
+shellcheck -x --source-path=lib --source-path=platforms \
+  -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh  # if available
 mini doctor                                           # must be clean
 mini "what is wrong with this machine"                # end to end
 mini model qwen2.5-coder:3b && mini "check disk"      # a second model
 ```
 
 Test on a box with no GPU and on one with a GPU — the selection paths differ.
+
+CI runs the same two commands (`.github/workflows/shell-checks.yml`). `-x` makes
+ShellCheck follow the files `bin/mini` sources at runtime, `--source-path` says
+where they live — so a moved or renamed lib file fails the build instead of
+quietly dropping out of the check. `SC2015` and `SC2016` are off because both
+are house idioms: `a && b || c` one-liners, and single-quoted text carrying
+literal backticks. Every other code is enforced, warnings and errors included.
 
 ## Docs
 

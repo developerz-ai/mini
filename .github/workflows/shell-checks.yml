@@ -33,6 +33,14 @@ jobs:
             bash -n "$file"
           done
 
+      # -x makes ShellCheck follow what bin/mini sources at runtime
+      # (${MINI_LIB}/…, ${MINI_PLATFORMS}/…); --source-path says where those
+      # files live, so a moved or renamed one fails the build instead of
+      # quietly dropping out of the check.
+      #
+      # SC2015 and SC2016 stay off: both are house idioms here — `a && b || c`
+      # one-liners and single-quoted text carrying literal backticks. Every
+      # other code is enforced, warnings and errors included.
       - name: Run ShellCheck
         shell: bash
-        run: shellcheck bin/mini lib/*.sh
+        run: shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh
