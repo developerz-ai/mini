@@ -247,10 +247,15 @@ mini setup
 
 Full removal:
 
+Run `ollama list` to identify installed model names. The removal command below
+is a 32k example: substitute your installed mini variant and base model names,
+and remove only models you no longer need.
+
 ```bash
+ollama list
 rm -rf ~/.cache/mini ~/.local/share/mini ~/.local/bin/mini
 rm -f ~/.config/opencode/tools/mini_*.ts
-ollama rm mini-qwen2.5-coder-7b:64k qwen2.5-coder:7b     # adjust to your model
+ollama rm mini-qwen2.5-coder-7b:32k qwen2.5-coder:7b     # example; substitute installed names
 ```
 
 Your own opencode config was never touched, so nothing else needs undoing.

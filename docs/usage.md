@@ -155,7 +155,15 @@ Anything OpenAI-compatible: OpenRouter, Groq, Together, DeepInfra, a vLLM server
 on your LAN, or another machine's ollama at `http://host:11434/v1` (no key).
 
 Everything else is unchanged — same `AGENTS.md`, same tools, same memory, same
-slash commands. `mini doctor` shows which mode you are in.
+slash commands. `mini doctor` shows which mode you are in. In remote mode it
+still checks the host, API-key permissions, opencode, tools, server-password
+permissions and disk/memory budget. It skips local Ollama installation, server
+and binding checks, local model presence/context/recommendations, and GPU/CPU
+inference-speed advice. No local model or GPU is required.
+
+Remote inference moves model execution, not opencode or the tools: those still
+run on this host and need resources. Low disk space or a small detected memory
+budget can therefore still produce doctor warnings or failures.
 
 The key lands `0600` in `$MINI_HOME/api-key`, and `opencode.json` becomes
 `0600` as well because it embeds the key.
@@ -196,7 +204,30 @@ mini update      # opencode + ollama + the model
 ```
 
 `mini doctor` is the first thing to run when something feels off. Every failing
-check prints the command that fixes it.
+check prints a repair or diagnostic command. Shared checks apply to both local
+and remote inference:
+
+- **Host tools:** `ss`, `systemctl`, `ufw` and `docker` are checked for
+  presence only. A missing one is a warning saying what the agent cannot do
+  without it, with the install command printed as the fix — doctor never
+  installs anything itself.
+- **Server password:** an existing `$MINI_HOME/secret` must have mode `0600`.
+  Unsafe permissions fail the check; repair without reading the password:
+  `chmod 600 "${MINI_HOME:-$HOME/.cache/mini}/secret"`. A missing file is normal
+  until the first `mini web`; doctor does not require creating one.
+- **Disk:** less than 10 GB free in the home filesystem is a warning. Inspect
+  with `df -h "$HOME"` and `du -h --max-depth=1 "$HOME"`, then move or remove
+  only data you have reviewed and no longer need, or expand the filesystem.
+- **Memory budget:** a detected budget below 2000 MB is a failure, including
+  with remote inference. This is mini's model-memory budget (GPU VRAM minus
+  1024 MB when used, otherwise 60% of RAM), not currently free RAM. Inspect
+  `free -h` and `ps -eo pid,comm,rss --sort=-rss`; stop only known, unnecessary
+  workloads. A hardware-derived budget may require a larger host or more RAM,
+  not just closing processes.
+
+Remote mode also checks an existing API-key file's permissions. Warnings appear
+in the final summary; failed shared checks make doctor exit nonzero even when
+the remote endpoint is reachable.
 
 ## Tuning the brain
 
