@@ -41,13 +41,37 @@ directories. opencode itself runs in your cwd — that is where the work happens
 2. Source `lib/*.sh`.
 3. `ensure_ready` — config exists, ollama is up (start it if not).
 4. `exec opencode -m <provider>/<model> --auto` with `OPENCODE_CONFIG` pointed at
-   `$MINI_HOME/opencode.json` and `$MINI_HOME/tools` prepended to `PATH`. The
-   provider follows the configured mode: `ollama/<model>` locally (the ctx
-   variant mini built), `mini-remote/<model>` after `mini remote` — in which
-   case the requests go to the remote endpoint and no local model is involved.
+   `$MINI_HOME/opencode.json` and a `PATH` that starts with mini's own bin dir
+   and `$MINI_HOME/tools`, followed by the `PATH` mini inherited. The provider
+   follows the configured mode: `ollama/<model>` locally (the ctx variant mini
+   built), `mini-remote/<model>` after `mini remote` — in which case the
+   requests go to the remote endpoint and no local model is involved.
 
 `exec` matters: mini replaces itself with opencode, so there is no wrapper
 process sitting between you and the TUI eating signals.
+
+## The agent's PATH
+
+mini hands opencode one environment, and it is built in one place: the three
+launch sites in `lib/opencode.sh` — `opencode_launch`, `opencode_run`,
+`opencode_web`. The `PATH` in it is mini's own two directories in front of
+yours:
+
+- **`<install root>/bin`** — the directory holding the `mini` CLI that resolved
+  the install root. The agent's shell therefore runs the *same* mini that
+  generated the config, whatever `PATH` happened to launch mini from. An
+  agent-run `mini remember` and an agent-run `mini sudo` act on the same
+  install as the session itself.
+- **`$MINI_HOME/tools`** — the shell tools (`websearch`, `webfetch`,
+  `sysreport`).
+- **The inherited `PATH`, unchanged** — mini only prepends. It never
+  rewrites, reorders or drops an entry of yours.
+
+The path comes from the install root, not from `~/.local/bin` (the installer's
+`MINI_BIN_DIR`), which the runtime never reads: `bin/mini` follows its own
+symlink to find the root and everything else follows from that. No shell rc
+file is read or written to make this work — the installer's one-time `PATH`
+line for the `mini` command is the only rc edit mini ever makes.
 
 ## Model selection
 
@@ -96,7 +120,10 @@ shadow it; the brain belongs in `AGENTS.md` where it can be read and edited.
 - `provider.ollama` via `@ai-sdk/openai-compatible` at `localhost:11434/v1`
 - `model` + `small_model` both pointed at the variant
 - `instructions` → `$MINI_HOME/AGENTS.md` and `$MINI_HOME/memories/*.md`
-- `command` → the slash commands
+- `command` → the slash commands. `/remember` names the mini CLI by absolute
+  path (`<install root>/bin/mini remember "…"`), so the command runs the CLI
+  that wrote this config, not whichever `mini` happens to be on the agent's
+  `PATH`.
 - `autoupdate: false`, `share: disabled`
 
 Regeneration never overwrites the live file. The fresh config is built in
