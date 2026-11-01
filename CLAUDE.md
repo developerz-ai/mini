@@ -105,10 +105,11 @@ there; never read state from the install root.
 
 ## Testing
 
-There is no test suite; it is a wrapper around two binaries. Verify by running:
+The webfetch truncation/failure contract has a self-test; everything else is verified by running:
 
 ```bash
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
+bash tests/webfetch.sh                               # webfetch truncation + failure contract (PATH-stubbed, no network)
 shellcheck bin/mini lib/*.sh                          # if available
 mini doctor                                           # must be clean
 mini "what is wrong with this machine"                # end to end

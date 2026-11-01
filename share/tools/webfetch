@@ -39,6 +39,8 @@ case "$URL" in
   *) URL="https://${URL}" ;;
 esac
 case "$MAX_CHARS" in ''|*[!0-9]*) MAX_CHARS=20000 ;; esac
+# 10# forces base 10, so -c 020 is twenty rather than octal sixteen.
+MAX_CHARS=$((10#$MAX_CHARS))
 
 body=$(curl -sSL --max-time 30 --compressed --max-redirs 5 \
   -A "$UA" \
@@ -54,23 +56,38 @@ body=$(curl -sSL --max-time 30 --compressed --max-redirs 5 \
 [ -n "$body" ] || { printf 'webfetch: empty response from %s\n' "$URL" >&2; exit 1; }
 
 if [ "$RAW" -eq 1 ]; then
-  printf '%s' "$body" | head -c "$MAX_CHARS"
+  # head closes the pipe once it has the cap and SIGPIPEs the writer; fed from
+  # a process substitution that death is never a checked status, so an
+  # oversized raw fetch still exits 0.
+  head -c "$MAX_CHARS" < <(printf '%s' "$body")
   exit 0
 fi
 
 printf '# %s\n\n' "$URL"
 
 # Prefer a real text browser when the user has one; it renders tables and lists
-# far better than any regex.
+# far better than any regex. Every branch captures the FULL conversion: piping
+# a converter into head under pipefail turns a successful oversized fetch into
+# exit 141 (SIGPIPE), which set -e reports as a failure. Truncation happens
+# once, below, on the captured text.
+status=0
+# The trailing newline is per branch, matching the old pipelines: w3m, lynx
+# and python3 were captured and reprinted with one; the sed fallback was piped
+# straight to stdout, where head -c appended nothing.
+text_nl=''
 if command -v w3m >/dev/null 2>&1; then
-  printf '%s' "$body" | w3m -dump -T text/html 2>/dev/null | head -c "$MAX_CHARS"
+  text_nl=$'\n'
+  text=$(printf '%s' "$body" | w3m -dump -T text/html 2>/dev/null) || status=$?
 elif command -v lynx >/dev/null 2>&1; then
-  printf '%s' "$body" | lynx -stdin -dump -nolist 2>/dev/null | head -c "$MAX_CHARS"
+  text_nl=$'\n'
+  text=$(printf '%s' "$body" | lynx -stdin -dump -nolist 2>/dev/null) || status=$?
 elif command -v python3 >/dev/null 2>&1; then
-  printf '%s' "$body" | MAX_CHARS="$MAX_CHARS" python3 -c '
-import html as H, os, re, sys
+  text_nl=$'\n'
+  text=$(printf '%s' "$body" | python3 -c '
+import html as H, re, sys
 raw = sys.stdin.read()
-limit = int(os.environ.get("MAX_CHARS", "20000"))
+# NULs would make bash command substitution warn and drop bytes.
+raw = raw.replace("\x00", "")
 
 # Drop everything that is not prose.
 for tag in ("script", "style", "noscript", "svg", "head", "nav", "footer", "form"):
@@ -89,16 +106,28 @@ raw = re.sub(r"[ \t\xa0]+", " ", raw)
 raw = re.sub(r" *\n *", "\n", raw)
 raw = re.sub(r"\n{3,}", "\n\n", raw).strip()
 
-out = raw[:limit]
-print(out)
-if len(raw) > limit:
-    print(f"\n… truncated at {limit} chars of {len(raw)}. Re-run with -c to read more.")
-'
+print(raw)
+') || status=$?
 else
-  printf '%s' "$body" \
+  text=$(printf '%s' "$body" \
     | sed -e 's/<script[^>]*>.*<\/script>//gI' \
           -e 's/<style[^>]*>.*<\/style>//gI' \
           -e 's/<[^>]*>/ /g' \
-    | tr -s ' \n' ' \n' \
-    | head -c "$MAX_CHARS"
+    | tr -s ' \n' ' \n') || status=$?
+fi
+
+if [ "$status" -ne 0 ]; then
+  printf 'webfetch: conversion failed for %s\n' "$URL" >&2
+  exit 1
+fi
+
+# One cap for every branch, applied after the converter has finished. The
+# truncating path ends its capped text with a newline before the note; the
+# short path keeps each branch's original bytes via its newline flag.
+len=${#text}
+if [ "$len" -gt "$MAX_CHARS" ]; then
+  printf '%s\n' "${text:0:$MAX_CHARS}"
+  printf '\n… truncated at %s chars of %s. Re-run with -c to read more.\n' "$MAX_CHARS" "$len"
+else
+  printf '%s%s' "$text" "$text_nl"
 fi
