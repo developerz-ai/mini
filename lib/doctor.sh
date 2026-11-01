@@ -96,11 +96,26 @@ doctor_run() {
     step "Inference"
     local r_url r_model
     r_url=$(cfg_get MINI_REMOTE_URL); r_model=$(cfg_get MINI_REMOTE_MODEL)
-    d_ok "remote: ${r_model} via ${r_url}"
-    if curl -sf --max-time 10 -o /dev/null "$r_url" 2>/dev/null; then
-      d_ok "endpoint reachable"
+    # A remote provider with no endpoint or no model is not a warning: every
+    # launch path dies on it. Say so, and say the command that fixes it.
+    local r_missing=0
+    if [ -z "$r_url" ]; then
+      d_fail "no remote URL configured"; r_missing=1
+    fi
+    if [ -z "$r_model" ]; then
+      d_fail "no remote model configured"; r_missing=1
+    fi
+    if [ "$r_missing" -eq 0 ]; then
+      d_ok "remote: ${r_model} via ${r_url}"
     else
-      d_warn "could not reach ${r_url} (it may still work — some endpoints reject bare GETs)"
+      d_fix "mini remote <url> <model> [key]"
+    fi
+    if [ -n "$r_url" ]; then
+      if curl -sf --max-time 10 -o /dev/null "$r_url" 2>/dev/null; then
+        d_ok "endpoint reachable"
+      else
+        d_warn "could not reach ${r_url} (it may still work — some endpoints reject bare GETs)"
+      fi
     fi
     if [ -f "${MINI_HOME}/api-key" ]; then
       local km; km=$(stat -c '%a' "${MINI_HOME}/api-key" 2>/dev/null)

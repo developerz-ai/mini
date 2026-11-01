@@ -105,9 +105,12 @@ there; never read state from the install root.
 
 ## Testing
 
-There is no test suite; it is a wrapper around two binaries. Verify by running:
+Provider and launch selection are covered by `tests/test_provider.sh` — run it
+first. The rest has no test suite; it is a wrapper around two binaries. Verify
+by running:
 
 ```bash
+bash tests/test_provider.sh                           # provider/launch selection
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
 shellcheck bin/mini lib/*.sh                          # if available
 mini doctor                                           # must be clean

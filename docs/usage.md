@@ -112,6 +112,23 @@ mini web --lan       # reachable from your network, still password-protected
 mini headless        # a server to attach to from another machine
 ```
 
+Both `mini web` and `mini headless` follow the configured provider:
+
+| Mode | What opencode is launched with |
+|---|---|
+| default | the local ollama model, `ollama/<model>` |
+| after `mini remote` | the remote endpoint, `mini-remote/<model>` |
+
+A remote-only box needs no local model: nothing is pulled, and ollama does not
+have to be running. If the remote setup is incomplete — no URL or no model —
+the launch stops before opencode starts and names the command that fixes it:
+
+```
+no remote model configured — run: mini remote <url> <model> [key]
+```
+
+`mini doctor` reports the same gap as a failure and prints that fix command.
+
 The password is 32 random characters, generated on first use and stored `0600`
 in `~/.cache/mini/secret`. It exists because this endpoint can run commands on
 the machine — unauthenticated, it would be a remote shell for anyone who can
@@ -153,6 +170,9 @@ on your LAN, or another machine's ollama at `http://host:11434/v1` (no key).
 
 Everything else is unchanged — same `AGENTS.md`, same tools, same memory, same
 slash commands. `mini doctor` shows which mode you are in.
+
+In remote mode there is no local model to set up — `mini web` and `mini headless`
+use the remote endpoint as well (see [Browser UI](#browser-ui-and-remote-access)).
 
 The key lands `0600` in `~/.cache/mini/api-key`, and `opencode.json` becomes
 `0600` as well because it embeds the key.
