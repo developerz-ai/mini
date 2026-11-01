@@ -145,13 +145,21 @@ Environment=\"OLLAMA_HOST=${OLLAMA_HOST_ADDR}\""
   [ "${SUDO_MODE:-}" = 'password' ] && return 0
   [ "${SUDO_MODE:-}" = 'none' ] && return 0
 
-  if [ -f "$file" ] && [ "$(cat "$file" 2>/dev/null)" = "$want" ]; then
+  # A matching file is not proof it was applied: a previous reload/restart
+  # may have failed while the old (possibly public) listener stayed healthy.
+  if [ ! -e "${file}.pending" ] && [ -f "$file" ] && [ "$(cat "$file" 2>/dev/null)" = "$want" ]; then
     return 0
   fi
 
   # The drop-in directory does not exist until something creates it.
   _mini_sudo mkdir -p "$dir" 2>/dev/null || {
     warn "could not create ${dir} — ollama keeps its defaults"
+    return 1
+  }
+  # Persist before writing, so failures (or interruption) cannot enable the
+  # content-match shortcut on the next invocation. Keep the drop-in for retry.
+  _mini_sudo touch "${file}.pending" 2>/dev/null || {
+    warn "could not mark ${file} pending — check sudo access with: mini sudo"
     return 1
   }
   printf '%s\n' "$want" | _mini_sudo tee "$file" >/dev/null 2>&1 || {
@@ -164,6 +172,10 @@ Environment=\"OLLAMA_HOST=${OLLAMA_HOST_ADDR}\""
   }
   _mini_sudo systemctl restart ollama >/dev/null 2>&1 || {
     warn "could not restart ollama — run: sudo -n systemctl restart ollama"
+    return 1
+  }
+  _mini_sudo rm -f "${file}.pending" 2>/dev/null || {
+    warn "could not clear pending state — run: sudo -n rm -f ${file}.pending"
     return 1
   }
   ok "tuned ollama for agent use (serialised requests, 30m keep-alive)"

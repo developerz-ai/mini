@@ -32,19 +32,43 @@ _mini_sudo() {
 
 for failure in daemon-reload restart; do
   rm -rf "$work/dropin"
-  : > "$work/events"
-  if (ollama_bind_local) > "$work/output" 2>&1; then
-    printf 'FAIL: local rebind accepted %s failure with a healthy old listener\n' "$failure" >&2
-    exit 1
-  fi
-  if grep -Eq 'rebound|tuned ollama' "$work/output" || grep -q '^wait$' "$work/events"; then
-    printf 'FAIL: local rebind reported success or waited after %s failure\n' "$failure" >&2
-    exit 1
-  fi
-  if [ "$failure" = daemon-reload ] && grep -q '^restart$' "$work/events"; then
-    printf 'FAIL: restarted after failed daemon-reload\n' >&2
-    exit 1
-  fi
+  for attempt in 1 2; do
+    : > "$work/events"
+    if (ollama_bind_local) > "$work/output" 2>&1; then
+      printf 'FAIL: local rebind accepted %s failure on attempt %s with a healthy old listener\n' "$failure" "$attempt" >&2
+      exit 1
+    fi
+    if grep -Eq 'rebound|tuned ollama' "$work/output" || grep -q '^wait$' "$work/events"; then
+      printf 'FAIL: local rebind reported success or waited after %s failure\n' "$failure" >&2
+      exit 1
+    fi
+    grep -q '^daemon-reload$' "$work/events"
+    if [ "$failure" = daemon-reload ] && grep -q '^restart$' "$work/events"; then
+      printf 'FAIL: restarted after failed daemon-reload\n' >&2
+      exit 1
+    fi
+    if [ "$failure" = restart ]; then
+      grep -q '^restart$' "$work/events"
+    fi
+    test -f "$work/dropin/10-mini.conf"
+  done
+
+  # Recover without deleting the failed drop-in, then retain the applied shortcut.
+  (
+    failure=none
+    : > "$work/events"
+    ollama_bind_local > "$work/output" 2>&1
+    grep -q '^daemon-reload$' "$work/events"
+    grep -q '^restart$' "$work/events"
+    grep -q 'ollama rebound' "$work/output"
+    : > "$work/events"
+    ollama_bind_local > "$work/output" 2>&1
+    if grep -Eq '^(daemon-reload|restart)$' "$work/events"; then
+      printf 'FAIL: reapplied an already successful drop-in\n' >&2
+      exit 1
+    fi
+  )
+  printf 'PASS: %s retries fail closed and recover without deleting the drop-in\n' "$failure"
 
   rm -rf "$work/dropin"
   ollama_tune > "$work/output" 2>&1
