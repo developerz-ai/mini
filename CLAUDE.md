@@ -29,8 +29,10 @@ it.
 | `install.sh` | curl-to-bash entry point |
 | `tests/` | Offline bash checks. No framework — run them by hand. |
 
-Runtime state is `~/.cache/mini/` (`$MINI_HOME`). Never write program files
-there; never read state from the install root.
+Runtime state is `~/.cache/mini/` (`$MINI_HOME`). The sole program-file exception
+is `$MINI_HOME/tools`, where mini installs shipped scripts copied from
+`share/tools`. Never write other program files in `$MINI_HOME`; never store or
+read runtime state in the install root.
 
 ## Rules
 
