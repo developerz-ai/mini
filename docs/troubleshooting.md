@@ -233,11 +233,11 @@ too small for agentic work. Move up a tier.
 
 ## Tool calls fail with "command not found"
 
-The shell tools live in `~/.cache/mini/tools/` and mini prepends that to `PATH`
-when launching opencode. Inside a session the bare names resolve. Outside one —
-you started opencode directly, or you want a script for yourself — that
-directory is not on your `PATH`. Call it by full path, or put it on `PATH` for
-one command:
+The shell tools live in `~/.cache/mini/tools/` and mini prepends that to
+`PATH` — along with its own bin dir — when launching opencode. Inside a
+session the bare names resolve. Outside one — you started opencode directly,
+or you want a script for yourself — that directory is not on your `PATH`.
+Call it by full path, or put it on `PATH` for one command:
 
 ```bash
 ~/.cache/mini/tools/websearch "test query"
@@ -248,6 +248,42 @@ mini setup                     # reinstalls the scripts, replacing any stale cop
 
 Moved mini's state with `MINI_HOME`? The directory moved with it:
 `$MINI_HOME/tools/`.
+
+### When the missing command is `mini` itself
+
+Same rule, different command. If the environment that started mini had no mini
+bin dir on its `PATH` — a cron job, a systemd unit, an SSH one-liner, a
+container built without the installer's `PATH` line — the agent it launches can
+lose `mini` too:
+
+```
+mini: command not found
+```
+
+That is what breaks `mini remember` (the `/remember` slash command) and
+`mini sudo` (the prompt tells the agent to mention `mini sudo` when `sudo -n`
+fails).
+
+mini resolves this itself now. The `PATH` it hands opencode starts with its
+own bin dir — the install root's `bin/`, where the running `mini` lives — so
+`mini` inside a session is the same CLI that wrote the config, whatever
+`PATH` mini itself was started with. The generated `/remember` command names
+that CLI by absolute path as well, so it works even when the session's `PATH`
+is empty.
+
+Nothing is read from or written to a shell rc file to achieve this, and the
+`PATH` mini inherited is kept intact — mini prepends to it, it never rewrites
+or drops your entries.
+
+To see which mini a session would use:
+
+```bash
+root=$(mini config | awk '/install root/{print $3}')
+ls -l "$root/bin/mini"
+```
+
+That is the file the agent's `mini` resolves to, so a `mini sudo` the agent
+runs targets that same install.
 
 ## websearch returns nothing
 

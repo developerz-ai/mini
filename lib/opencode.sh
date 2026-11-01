@@ -18,10 +18,77 @@ opencode_bin() {
   fi
 }
 
+# The absolute path of the mini CLI that is running.
+#
+# The runtime knows exactly one thing about where it lives: the install root
+# it resolves from its own path (bin/mini). MINI_BIN_DIR is not that thing —
+# install.sh defines it, nothing exports it, and no lib file reads it — so
+# the CLI cannot be located through it.
+#
+# lib/opencode.sh lives in <install root>/lib, so the root is one level up
+# from this file; MINI_ROOT is that same root whenever mini is running.
+mini_cli_path() {
+  local root="${MINI_ROOT:-}" cli
+  if [ -z "$root" ] || [ ! -x "${root}/bin/mini" ]; then
+    root=$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd) || return 1
+  fi
+  cli="${root}/bin/mini"
+  [ -x "$cli" ] || return 1
+  printf '%s\n' "$cli"
+}
+
+# The directory holding that CLI.
+mini_bin_dir() {
+  local cli
+  cli=$(mini_cli_path) || return 1
+  dirname "$cli"
+}
+
+# The PATH the agent inherits.
+#
+# Two directories are prepended:
+#   <install root>/bin — so `mini` inside a session is THIS mini, the same
+#                        CLI that wrote the config, even when the shell that
+#                        started mini had no mini bin dir on its PATH
+#   $MINI_HOME/tools   — the shell tools (websearch, webfetch, sysreport)
+#
+# Every entry of the caller's PATH is kept: mini prepends, it never rewrites
+# or drops what the user had.
+opencode_agent_path() {
+  local dir path="${PATH:-}"
+  dir=$(mini_bin_dir) || dir=''
+  if [ -n "$path" ]; then
+    printf '%s\n' "${dir:+$dir:}${MINI_HOME}/tools:${path}"
+  else
+    printf '%s\n' "${dir:+$dir:}${MINI_HOME}/tools"
+  fi
+}
+
+# A path, safe to drop inside a double-quoted shell word.
+#
+# The /remember command runs the CLI by absolute path, and that path ends up
+# in a shell command the agent types. Inside double quotes four characters
+# still mean something: \ " $ and `.
+shell_quote_path() {
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//\$/\\\$}
+  s=${s//\`/\\\`}
+  printf '%s' "$s"
+}
+
 # The slash commands, shared by the local and remote config writers so the two
 # can never drift apart.
+#
+# The /remember command names the CLI by absolute path. The agent's shell
+# inherits the PATH of whatever started mini, and that PATH usually carries no
+# mini bin dir — so a bare `mini` would not resolve, and neither would the
+# `mini sudo` the agent is told to use. Naming the file also pins the command
+# to the install this config was generated from.
 opencode_command_block() {
-  cat <<'CMDS'
+  local block cli cli_json
+  block=$(cat <<'CMDS'
   "command": {
     "diag": {
       "description": "Diagnose what is wrong with this machine right now",
@@ -49,10 +116,21 @@ opencode_command_block() {
     },
     "remember": {
       "description": "Save a durable fact about this machine",
-      "template": "Append this fact to my machine memory by running: mini remember \"$ARGUMENTS\". Then confirm what was saved."
+      "template": "Append this fact to my machine memory by running: \"__MINI_CLI__\" remember \"$ARGUMENTS\". Then confirm what was saved."
     }
   }
 CMDS
+)
+  # __MINI_CLI__ is replaced with the absolute path of this mini, escaped for
+  # the JSON string it lands in and for the shell word it becomes there. When
+  # the CLI cannot be located, fall back to the bare command.
+  if cli=$(mini_cli_path); then
+    cli_json=$(json_escape "$(shell_quote_path "$cli")")
+    block="${block//__MINI_CLI__/"$cli_json"}"
+  else
+    block="${block//__MINI_CLI__/mini}"
+  fi
+  printf '%s\n' "$block"
 }
 
 #   opencode_merge_commands <fresh> <previous>
@@ -302,7 +380,7 @@ opencode_launch() {
 
   OPENCODE_CONFIG="${MINI_HOME}/opencode.json" \
   OLLAMA_HOST="$OLLAMA_HOST_ADDR" \
-  PATH="${MINI_HOME}/tools:${PATH}" \
+  PATH="$(opencode_agent_path)" \
     exec "$bin" "${flags[@]}" "$@"
 }
 
@@ -408,7 +486,7 @@ opencode_web() {
   OPENCODE_CONFIG="${MINI_HOME}/opencode.json" \
   OLLAMA_HOST="$OLLAMA_HOST_ADDR" \
   OPENCODE_SERVER_PASSWORD="$pw" \
-  PATH="${MINI_HOME}/tools:${PATH}" \
+  PATH="$(opencode_agent_path)" \
     exec "$bin" "$mode" --hostname "$host" -m "$ref" "$@"
 }
 
@@ -423,6 +501,6 @@ opencode_run() {
 
   OPENCODE_CONFIG="${MINI_HOME}/opencode.json" \
   OLLAMA_HOST="$OLLAMA_HOST_ADDR" \
-  PATH="${MINI_HOME}/tools:${PATH}" \
+  PATH="$(opencode_agent_path)" \
     exec "$bin" "${flags[@]}" "$@"
 }
