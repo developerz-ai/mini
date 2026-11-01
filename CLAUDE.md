@@ -109,10 +109,12 @@ read runtime state in the install root.
 ## Testing
 
 mini is a wrapper around two binaries, not a framework, but it does carry plain
-bash tests under `tests/`. Run the offline test scripts first, then the manual
+bash tests under `tests/`. Run the offline test scripts first, starting with
+`tests/test_provider.sh` for provider and launch selection, then the manual
 checks:
 
 ```bash
+bash tests/test_provider.sh      # provider/launch selection
 bash tests/init_test.sh          # init detection + doctor Init step
 bash tests/remote_key_test.sh    # offline, no network, no framework
 ```
@@ -120,11 +122,11 @@ bash tests/remote_key_test.sh    # offline, no network, no framework
 `tests/remote_key_test.sh` pins one thing: the API-key prompt of `mini remote`.
 With `MINI_YES=1` the prompt is skipped, nothing is read from stdin, and an
 empty `0600` key file is written. Without `MINI_YES` the prompt still reads the
-key from stdin and that key lands in the `0600` key file. Nothing else is
-covered by this script. It stubs the host GPU probes, so the result does not depend on the
-machine it runs on.
+key from stdin and that key lands in the `0600` key file. This script covers
+only that prompt. It stubs the host GPU probes, so the result does not depend
+on the machine it runs on.
 
-The wrapper itself is also checked by hand:
+The remaining wrapper behavior is checked by hand:
 
 ```bash
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax

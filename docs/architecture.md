@@ -14,7 +14,9 @@ mini (bash)
                               │
                               └─ opencode runs in YOUR cwd, config from MINI_HOME
                                         │
-                                        └─ http://localhost:11434/v1  (ollama)
+                                        └─ the provider in opencode.json
+                                             ├─ ollama → http://localhost:11434/v1
+                                             └─ mini-remote → the remote endpoint
 ```
 
 ## Two directories
@@ -38,8 +40,11 @@ directories. opencode itself runs in your cwd — that is where the work happens
 1. Resolve the install root by following the `~/.local/bin/mini` symlink.
 2. Source `lib/*.sh`.
 3. `ensure_ready` — config exists, ollama is up (start it if not).
-4. `exec opencode -m ollama/<variant> --auto` with `OPENCODE_CONFIG` pointed at
-   `$MINI_HOME/opencode.json` and `$MINI_HOME/tools` prepended to `PATH`.
+4. `exec opencode -m <provider>/<model> --auto` with `OPENCODE_CONFIG` pointed at
+   `$MINI_HOME/opencode.json` and `$MINI_HOME/tools` prepended to `PATH`. The
+   provider follows the configured mode: `ollama/<model>` locally (the ctx
+   variant mini built), `mini-remote/<model>` after `mini remote` — in which
+   case the requests go to the remote endpoint and no local model is involved.
 
 `exec` matters: mini replaces itself with opencode, so there is no wrapper
 process sitting between you and the TUI eating signals.
