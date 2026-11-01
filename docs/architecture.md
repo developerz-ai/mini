@@ -14,7 +14,9 @@ mini (bash)
                               │
                               └─ opencode runs in YOUR cwd, config from MINI_HOME
                                         │
-                                        └─ http://localhost:11434/v1  (ollama)
+                                        └─ the provider in opencode.json
+                                             ├─ ollama → http://localhost:11434/v1
+                                             └─ mini-remote → the remote endpoint
 ```
 
 ## Two directories
@@ -38,8 +40,11 @@ directories. opencode itself runs in your cwd — that is where the work happens
 1. Resolve the install root by following the `~/.local/bin/mini` symlink.
 2. Source `lib/*.sh`.
 3. `ensure_ready` — config exists, ollama is up (start it if not).
-4. `exec opencode -m ollama/<variant> --auto` with `OPENCODE_CONFIG` pointed at
-   `$MINI_HOME/opencode.json` and `$MINI_HOME/tools` prepended to `PATH`.
+4. `exec opencode -m <provider>/<model> --auto` with `OPENCODE_CONFIG` pointed at
+   `$MINI_HOME/opencode.json` and `$MINI_HOME/tools` prepended to `PATH`. The
+   provider follows the configured mode: `ollama/<model>` locally (the ctx
+   variant mini built), `mini-remote/<model>` after `mini remote` — in which
+   case the requests go to the remote endpoint and no local model is involved.
 
 `exec` matters: mini replaces itself with opencode, so there is no wrapper
 process sitting between you and the TUI eating signals.
@@ -55,10 +60,12 @@ Unmeasurable VRAM never inflates the budget. If `nvidia-smi` and `rocm-smi` are
 both absent, a card found via `lspci` is named in the report but counts as zero
 — a driver-less GPU cannot run anything.
 
-`lib/models.sh` walks `share/models.tsv` best → smallest and takes the first row
-that fits. On CPU it skips everything above `qwen2.5-coder:7b`: a 24B model on
-CPU produces a couple of tokens a second, which is not an interactive agent.
-`mini model <id>` overrides this.
+For auto-selection, `lib/models.sh` walks `share/models.tsv` best → smallest and
+takes the first row that fits. On CPU it skips registry rows before the
+`qwen3:4b-instruct` cap, then takes the first row that fits starting at that cap
+row: a 7B model generates about 2.5 tokens a second on CPU, which is not an
+interactive agent. GPU selection is uncapped and takes the first fitting row
+from the full registry. `mini model <id>` overrides this auto-selection.
 
 ## The context variant
 
@@ -91,6 +98,17 @@ shadow it; the brain belongs in `AGENTS.md` where it can be read and edited.
 - `instructions` → `$MINI_HOME/AGENTS.md` and `$MINI_HOME/memories/*.md`
 - `command` → the slash commands
 - `autoupdate: false`, `share: disabled`
+
+Regeneration never overwrites the live file. The fresh config is built in
+`opencode.json.tmp`; entries in the old config's `command` block whose keys are
+not mini-managed — the user's own slash commands — are carried into it with
+python3, the same opportunistic pattern as `opencode_validate_config`; the
+result is validated, and only then does it replace the live file. Managed
+commands always refresh to the current defaults. When merging is impossible —
+no python3, or an old config that does not parse — the old file is kept as
+`opencode.json.bak.XXXXXX` (a unique suffix for each fallback) and a warning
+names that path before the fresh config takes over. Existing recovery backups
+are never overwritten. Nothing the user added disappears silently.
 
 mini never edits `~/.config/opencode/opencode.json`. It sets `OPENCODE_CONFIG`
 instead, so a user who also runs opencode against a cloud provider keeps that
@@ -128,13 +146,20 @@ either as a tool call or a plain command on `PATH`.
 ## Platforms
 
 `detect_os` maps `/etc/os-release` onto a platform id; `platforms/<id>.sh`
-implements four functions. Nothing in `lib/` may mention a package manager — if
-it does, that is the bug. See [platforms/README.md](../platforms/README.md).
+implements five functions. Doctor's Host tools step gets its missing-tool
+fix lines from `platform_install_cmd_for`, which is why nothing in `lib/`
+may mention a package manager — if it does, that is the bug. See
+[platforms/README.md](../platforms/README.md).
 
 ## Dependencies
 
 `curl`, coreutils, `awk`, `sed`, `grep`. That is the whole list.
 
 `python3` is used opportunistically for better HTML parsing and every path has a
-pure-shell fallback. No `jq`: mini generates JSON with `printf` and never parses
-any, which is why it survives on a minimal box.
+pure-shell fallback. No `jq`: mini generates JSON with `printf`. Apart from
+`opencode_validate_config`'s check of the generated file and the merge's
+read-back of the file it just generated, the only place mini parses JSON is the
+old config's `command` block, to carry a user's custom slash commands across a
+regeneration. Without python3 there is no merge: the old config is kept as
+a unique `opencode.json.bak.XXXXXX` and the fresh one written beside it, so a minimal box loses
+convenience, never data.

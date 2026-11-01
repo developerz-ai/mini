@@ -27,9 +27,12 @@ it.
 | `share/opencode-tools/*.ts` | TS definitions that expose those to opencode |
 | `share/models.tsv` | The model registry. Dated. |
 | `install.sh` | curl-to-bash entry point |
+| `tests/` | Offline bash checks. No framework — run them by hand. |
 
-Runtime state is `~/.cache/mini/` (`$MINI_HOME`). Never write program files
-there; never read state from the install root.
+Runtime state is `~/.cache/mini/` (`$MINI_HOME`). The sole program-file exception
+is `$MINI_HOME/tools`, where mini installs shipped scripts copied from
+`share/tools`. Never write other program files in `$MINI_HOME`; never store or
+read runtime state in the install root.
 
 ## Rules
 
@@ -105,10 +108,33 @@ there; never read state from the install root.
 
 ## Testing
 
-There is no test suite; it is a wrapper around two binaries. Verify by running:
+There is no test framework — the checks are plain bash scripts you run by hand.
+Provider and launch selection are covered by `tests/test_provider.sh` — run it
+first.
+
+The webfetch truncation/failure contract has a self-test (`tests/webfetch.sh`).
+When changing capture or truncation, compare output byte for byte against the
+fixture with zero, one, and multiple trailing newlines, below and at the cap.
+Preserve newlines with a capture sentinel, keep converter failures non-zero,
+and test Python character slicing with multibyte input under `LC_ALL=C`.
 
 ```bash
+bash tests/remote_key_test.sh    # offline, no network, no framework
+```
+
+`tests/remote_key_test.sh` pins one thing: the API-key prompt of `mini remote`.
+With `MINI_YES=1` the prompt is skipped, nothing is read from stdin, and an
+empty `0600` key file is written. Without `MINI_YES` the prompt still reads the
+key from stdin and that key lands in the `0600` key file. This script covers
+only that prompt. It stubs the host GPU probes, so the result does not depend
+on the machine it runs on.
+
+The remaining wrapper behavior is checked by hand:
+
+```bash
+bash tests/test_provider.sh                           # provider/launch selection
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
+bash tests/webfetch.sh                               # webfetch truncation + failure contract (PATH-stubbed, no network)
 shellcheck -x --source-path=lib --source-path=platforms \
   -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh  # if available
 mini doctor                                           # must be clean
