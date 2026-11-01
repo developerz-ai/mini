@@ -138,18 +138,26 @@ too small for agentic work. Move up a tier.
 ## Tool calls fail with "command not found"
 
 The shell tools live in `~/.cache/mini/tools/` and mini prepends that to `PATH`
-when launching opencode. If you started opencode directly rather than through
-`mini`, that PATH entry is missing.
+when launching opencode. Inside a session the bare names resolve. Outside one —
+you started opencode directly, or you want a script for yourself — that
+directory is not on your `PATH`. Call it by full path, or put it on `PATH` for
+one command:
 
 ```bash
+~/.cache/mini/tools/websearch "test query"
+PATH="$HOME/.cache/mini/tools:$PATH" websearch "test query"
 ls -l ~/.cache/mini/tools/     # should show websearch webfetch sysreport
-mini setup                     # reinstalls them
+mini setup                     # reinstalls the scripts, replacing any stale copies
 ```
+
+Moved mini's state with `MINI_HOME`? The directory moved with it:
+`$MINI_HOME/tools/`.
 
 ## websearch returns nothing
 
 ```bash
-websearch "test query"
+# full path — a bare `websearch` only resolves inside a mini session
+~/.cache/mini/tools/websearch "test query"
 ```
 
 - `no results` on every attempt — DuckDuckGo may have changed its markup. The
