@@ -150,7 +150,7 @@ a file you have edited.
 ## Models
 
 `mini models` shows the registry against your hardware. Selection is by memory
-budget: VRAM minus 1GB on a GPU, 60% of RAM on CPU. On CPU it caps at 7B, since
+budget: VRAM minus 1GB on a GPU, 60% of RAM on CPU. On CPU it caps at `qwen3:4b-instruct`, since
 anything larger is too slow to be interactive — override with `mini model <id>`
 if you disagree.
 
@@ -163,8 +163,7 @@ if you disagree.
 | `qwen2.5-coder:7b` | 4.7GB | 32k | Code-specialised baseline. 8GB GPU. |
 | `qwen3:4b-instruct` | 2.5GB | 256k | **The CPU default.** Best small all-rounder. |
 | `llama3.2:3b` | 2.0GB | 128k | Small generalist, dependable tool calling. |
-| `qwen3:1.7b` | 1.4GB | 40k | Simple tasks. Tool calling still holds. |
-| `qwen3:0.6b` | 522MB | 40k | Runs anywhere. Hand-hold every step. |
+| `llama3.2:1b` | 1.3GB | 128k | Non-thinking, still calls tools. Simple tasks only. |
 
 Curated 2026-07, every context figure verified with `ollama show`.
 `mini models --refresh` re-checks availability upstream.
