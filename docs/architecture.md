@@ -40,12 +40,16 @@ directories. opencode itself runs in your cwd — that is where the work happens
 1. Resolve the install root by following the `~/.local/bin/mini` symlink.
 2. Source `lib/*.sh`.
 3. `ensure_ready` — config exists, ollama is up (start it if not).
-4. `exec opencode -m <provider>/<model> --auto` with `OPENCODE_CONFIG` pointed at
-   `$MINI_HOME/opencode.json` and a `PATH` that starts with mini's own bin dir
-   and `$MINI_HOME/tools`, followed by the `PATH` mini inherited. The provider
-   follows the configured mode: `ollama/<model>` locally (the ctx variant mini
-   built), `mini-remote/<model>` after `mini remote` — in which case the
-   requests go to the remote endpoint and no local model is involved.
+4. `exec opencode -m <provider>/<model> --auto` with `OPENCODE_CONFIG` pointed
+   at the live `$MINI_HOME/opencode.json` — or, under a run-only `--model <id>`
+   override, at a run-scoped config of that launch's own (a per-invocation temp
+   file, so two `mini --model` runs never share one), leaving the
+   stored model and the live config untouched — and a `PATH` that starts with
+   mini's own bin dir and `$MINI_HOME/tools`, followed by the `PATH` mini
+   inherited. The provider follows the configured mode: `ollama/<model>`
+   locally (the ctx variant mini built), `mini-remote/<model>` after
+   `mini remote` — in which case the requests go to the remote endpoint and no
+   local model is involved.
 
 `exec` matters: mini replaces itself with opencode, so there is no wrapper
 process sitting between you and the TUI eating signals.
@@ -115,7 +119,13 @@ shadow it; the brain belongs in `AGENTS.md` where it can be read and edited.
 
 ## Config generation
 
-`opencode_write_config` writes `$MINI_HOME/opencode.json`:
+`opencode_write_config` writes `$MINI_HOME/opencode.json` by default. It takes
+an optional destination and carry-from path: the run-only `--model` override
+calls it with a run-scoped config of that launch's own — a per-invocation temp
+file, so a second `mini --model` run cannot replace this run's config before
+opencode reads it — as the destination, and the live config as the carry
+source, so the override's variant is declared beside the live config, which is
+never touched:
 
 - `provider.ollama` via `@ai-sdk/openai-compatible` at `localhost:11434/v1`
 - `model` + `small_model` both pointed at the variant
@@ -126,8 +136,10 @@ shadow it; the brain belongs in `AGENTS.md` where it can be read and edited.
   `PATH`.
 - `autoupdate: false`, `share: disabled`
 
-Regeneration never overwrites the live file. The fresh config is built in
-`opencode.json.tmp`; entries in the old config's `command` block whose keys are
+Regeneration never overwrites the live file. The fresh config is built in a
+temp file of its own (`opencode.json.tmp.XXXXXX`) and renamed into place, so
+two writers racing for the same destination never truncate each other's
+half-written config; entries in the old config's `command` block whose keys are
 not mini-managed — the user's own slash commands — are carried into it with
 python3, the same opportunistic pattern as `opencode_validate_config`; the
 result is validated, and only then does it replace the live file. Managed
