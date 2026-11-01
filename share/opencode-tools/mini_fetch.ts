@@ -6,10 +6,12 @@ import path from "path"
  * Fetch a URL as readable text.
  *
  * Sends the headers a normal desktop browser sends, so documentation sites that
- * reject bare curl still render. Wraps ~/.cache/mini/tools/webfetch.
+ * reject bare curl still render. Wraps <MINI_HOME>/tools/webfetch
+ * (default ~/.cache/mini; honors XDG_CACHE_HOME when MINI_HOME is unset or empty).
  */
 const SCRIPT = path.join(
-  process.env.MINI_HOME || path.join(os.homedir(), ".cache", "mini"),
+  process.env.MINI_HOME ||
+    path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "mini"),
   "tools",
   "webfetch",
 )

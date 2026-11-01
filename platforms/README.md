@@ -18,12 +18,13 @@ onto a platform id. Both files are picked up by name — no registry to update.
 
 ## The interface
 
-A module implements four functions:
+A module implements five functions:
 
 ```bash
 platform_name()          # human label, e.g. "debian-family (Ubuntu 24.04)"
 platform_supported()     # exit 0 if mini can run here
 platform_install_pkgs()  # install packages by name, idempotently
+platform_install_cmd_for()  # exact install command for the package that provides a command
 platform_bootstrap()     # everything mini needs before setup can run
 ```
 
@@ -38,7 +39,7 @@ Rules that keep the modules interchangeable:
 
 1. Add the distro to the `case` in `detect_os()` (`lib/detect.sh`) so it maps to
    your platform id.
-2. Copy `platforms/debian.sh` to `platforms/<id>.sh` and reimplement the four
+2. Copy `platforms/debian.sh` to `platforms/<id>.sh` and reimplement the five
    functions.
 3. Copy `share/prompts/debian.md` to `share/prompts/<id>.md` and rewrite it for
    the distro — package manager, init system, firewall, log locations, and the
