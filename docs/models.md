@@ -121,7 +121,11 @@ Context is chosen from the budget, then capped at what the model supports:
 
 KV cache is not free — 64k on a 3GB box would swap and be slower than a smaller
 window. `mini doctor` warns when your context lands below 64k so you know the
-agent is running with less room than opencode wants.
+agent is running with less room than opencode wants. The warning names which of
+three causes applies: the context is the model's native ceiling, this box's
+memory cannot hold the model's full native window, or the model is not in the
+registry so its native context is unknown — the context is then chosen from the
+budget and capped at mini's 32768 fallback.
 
 No `SYSTEM` line is baked into the variant. opencode sends its own system
 prompt, which shadows it anyway; the brain belongs in `AGENTS.md` where you can
@@ -152,7 +156,10 @@ mini model hf.co/unsloth/Qwen3-4B-Instruct-GGUF:Q4_K_M    # straight from Huggin
 mini warns that it is unknown, then tries anyway: pulls it, picks a context from
 your budget, builds the variant. The registry is a curated shortlist, not a
 whitelist — anything `ollama pull` accepts works, including any GGUF on
-HuggingFace via the `hf.co/<user>/<repo>:<quant>` form.
+HuggingFace via the `hf.co/<user>/<repo>:<quant>` form. In `mini doctor`, the
+context warning for such a model reports the context as chosen from the budget
+and capped at mini's 32768 fallback, pointing
+at `ollama show <model> | grep 'context length'` for the real ceiling.
 
 Before committing to one, check the two things that decide whether it can be an
 agent at all:

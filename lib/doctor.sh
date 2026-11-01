@@ -151,14 +151,17 @@ doctor_run() {
       d_ok "present in ollama"
     fi
     if [ -n "$ctx" ] && [ "$ctx" -lt 65536 ] 2>/dev/null; then
-      # Two very different causes, two very different fixes.
+      # Three very different causes, three very different fixes.
       local native; native=$(models_field "$base" 3)
       if [ -n "$native" ] && [ "$ctx" -ge "$native" ] 2>/dev/null; then
         d_warn "context ${ctx} — that is ${base}'s native maximum, and below the 64k opencode prefers"
         d_fix "for more, a long-context model: mini model devstral:24b (128k)"
-      else
-        d_warn "context ${ctx}; this model supports ${native} but memory here does not allow it"
+      elif [ -n "$native" ]; then
+        d_warn "context ${ctx}; ${base} supports ${native} but memory here does not allow it"
         d_fix "free memory, add a GPU, or drop a size: mini models"
+      else
+        d_warn "context ${ctx}; ${base} is not in the registry, so its native context is unknown — the context is chosen from the budget, capped at mini's 32768 fallback"
+        d_fix "ollama show ${base} | grep 'context length'"
       fi
     elif [ -n "$ctx" ]; then
       d_ok "context ${ctx}"
