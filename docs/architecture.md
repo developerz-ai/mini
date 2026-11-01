@@ -94,6 +94,16 @@ shadow it; the brain belongs in `AGENTS.md` where it can be read and edited.
 - `command` → the slash commands
 - `autoupdate: false`, `share: disabled`
 
+Regeneration never overwrites the live file. The fresh config is built in
+`opencode.json.tmp`; entries in the old config's `command` block whose keys are
+not mini-managed — the user's own slash commands — are carried into it with
+python3, the same opportunistic pattern as `opencode_validate_config`; the
+result is validated, and only then does it replace the live file. Managed
+commands always refresh to the current defaults. When merging is impossible —
+no python3, or an old config that does not parse — the old file is kept as
+`opencode.json.bak` and a warning names that path before the fresh config
+takes over. Nothing the user added disappears silently.
+
 mini never edits `~/.config/opencode/opencode.json`. It sets `OPENCODE_CONFIG`
 instead, so a user who also runs opencode against a cloud provider keeps that
 setup intact. The only global footprint is three tool files in
@@ -140,5 +150,10 @@ may mention a package manager — if it does, that is the bug. See
 `curl`, coreutils, `awk`, `sed`, `grep`. That is the whole list.
 
 `python3` is used opportunistically for better HTML parsing and every path has a
-pure-shell fallback. No `jq`: mini generates JSON with `printf` and never parses
-any, which is why it survives on a minimal box.
+pure-shell fallback. No `jq`: mini generates JSON with `printf`. Apart from
+`opencode_validate_config`'s check of the generated file and the merge's
+read-back of the file it just generated, the only place mini parses JSON is the
+old config's `command` block, to carry a user's custom slash commands across a
+regeneration. Without python3 there is no merge: the old config is kept as
+`opencode.json.bak` and the fresh one written beside it, so a minimal box loses
+convenience, never data.

@@ -62,7 +62,19 @@ Inside the interactive session:
 | `/svc <unit>` | Debug a systemd service end to end |
 | `/remember <fact>` | Save a fact about this machine |
 
-Add your own in the `command` block of `$MINI_HOME/opencode.json`.
+Add your own in the `command` block of `$MINI_HOME/opencode.json`. They
+survive regeneration: `mini setup`, `mini model`, `mini remote`, `mini local`
+and `mini update` rewrite that file, and anything in the block that is not one
+of mini's own commands is carried into the new one.
+
+The commands mini manages — `diag`, `harden`, `devbox`, `ports`, `space`, `svc`,
+`remember` — refresh to the current defaults on every regeneration, so an edited
+one of those does not survive: give a modified version a different name
+(`/space-fast`) and it is yours.
+
+If regeneration cannot merge — no python3, or an existing config mini cannot
+read — the previous config is kept as `opencode.json.bak` next to the new one.
+Nothing you added is silently destroyed.
 
 ## Approvals
 
