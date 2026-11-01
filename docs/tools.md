@@ -22,12 +22,41 @@ a script or a cron job. So all of it stays in bash and the TS file is a
 
 The practical benefit: the model can reach every capability two ways — as a tool
 call, or as a plain command via `bash`. Small models sometimes prefer one over
-the other, and both work.
+the other, and both work. The command way only resolves *inside a session*:
+mini puts the tools directory on `PATH` when it launches opencode. See
+*Where the commands resolve* below for running them from your own shell.
 
 The TS files are namespaced `mini_*` on purpose. Custom tools install globally
 to `~/.config/opencode/tools/`, and opencode lets a custom tool **override a
 built-in of the same name**. A file called `webfetch.ts` would replace
 opencode's own webfetch in every project you open, not just under mini.
+
+## Where the commands resolve
+
+Bare `websearch`, `webfetch` and `sysreport` resolve inside a mini session and
+not in an ordinary shell, and that gap is deliberate.
+
+- **In a session** — every way mini launches opencode prepends
+  `~/.cache/mini/tools` to `PATH`: interactive `mini`, one-shot `mini "<q>"`,
+  and `mini web` / `mini headless` alike. The agent's `bash` calls resolve the
+  bare names from that directory.
+- **In your own shell** — that directory is not on `PATH`, and mini installs
+  no global `PATH` entry for it (`install.sh` manages `PATH` only for the
+  `mini` command itself). Run the script by full path, or put the directory on
+  `PATH` for one command:
+
+  ```bash
+  ~/.cache/mini/tools/websearch "systemd 203 EXEC"
+  PATH="$HOME/.cache/mini/tools:$PATH" sysreport
+  ```
+
+Do not add the directory to a shell rc; nothing outside a mini session should
+depend on it. If you moved mini's state with `MINI_HOME`, the scripts live in
+`$MINI_HOME/tools/` instead.
+
+None of this applies to tool *calls*: the `mini_*` TypeScript definitions
+shell out to the bash script by absolute path (`$MINI_HOME/tools/<name>`), so
+they work wherever `PATH` points.
 
 ## sysreport
 
