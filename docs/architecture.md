@@ -128,8 +128,10 @@ either as a tool call or a plain command on `PATH`.
 ## Platforms
 
 `detect_os` maps `/etc/os-release` onto a platform id; `platforms/<id>.sh`
-implements four functions. Nothing in `lib/` may mention a package manager — if
-it does, that is the bug. See [platforms/README.md](../platforms/README.md).
+implements five functions. Doctor's Host tools step gets its missing-tool
+fix lines from `platform_install_cmd_for`, which is why nothing in `lib/`
+may mention a package manager — if it does, that is the bug. See
+[platforms/README.md](../platforms/README.md).
 
 ## Dependencies
 
