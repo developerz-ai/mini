@@ -8,8 +8,8 @@
 #
 # The --model run-only override pins the same agreement for one invocation:
 # the launch names ollama/<variant> built from MINI_FORCE_MODEL and points
-# OPENCODE_CONFIG at the run-scoped opencode-run.json, while the stored
-# selection and the live config stay untouched.
+# OPENCODE_CONFIG at a run-scoped config of that launch's own, while the
+# stored selection and the live config stay untouched.
 #
 # Run: bash tests/test_provider.sh
 #
@@ -28,6 +28,13 @@ export MINI_SHARE
 # sourced: lib/ollama.sh reads MINI_HOME at source time.
 MINI_HOME="$(mktemp -d "${TMPDIR:-/tmp}/mini-provider-test.XXXXXX")"
 HOMES=("${MINI_HOME}")
+
+# The run-scoped config of a --model launch is a per-invocation temp file.
+# TMPDIR is pinned to a directory of this test's own, so a case can see
+# exactly what mini leaves there — and one case's leftovers can never be
+# mistaken for another's.
+export TMPDIR="${MINI_HOME}/tmp"
+mkdir -p "$TMPDIR"
 
 # shellcheck source=../lib/common.sh
 . "$ROOT/lib/common.sh"
@@ -105,6 +112,16 @@ check_fail() { # <name> <status>
     return 0
   fi
   printf '  FAIL  %s\n         expected a non-zero exit, got %s\n' "$1" "$2"
+  return 1
+}
+
+check_true() { # <name> <command...>: ok when the command exits 0
+  local name="$1"; shift
+  if "$@"; then
+    printf '  ok    %s\n' "$name"
+    return 0
+  fi
+  printf '  FAIL  %s\n         %s failed\n' "$name" "$*"
   return 1
 }
 
@@ -273,12 +290,15 @@ case_doctor_remote_incomplete() {
 
 # A fake opencode that prints its OPENCODE_CONFIG and its arguments, so the
 # override cases can assert both halves of the launch contract: the ref (-m)
-# and the config the launch points at.
+# and the config the launch points at. It also reports the model declared in
+# the config it was handed — the launch and its config must agree, whatever
+# else happens to the file in between.
 new_fake_opencode() {
   FAKE_OPENCODE="${MINI_HOME}/fake-opencode"
   cat > "$FAKE_OPENCODE" <<'SH'
 #!/usr/bin/env bash
 printf 'cfg=%s\n' "${OPENCODE_CONFIG:-}"
+printf 'declared=%s\n' "$(sed -n 's/^[[:space:]]*"model":[[:space:]]*"\([^"]*\)".*/\1/p' "${OPENCODE_CONFIG:-/dev/null}" 2>/dev/null | head -n1)"
 printf '%s\n' "$*"
 SH
   chmod +x "$FAKE_OPENCODE"
@@ -321,18 +341,23 @@ override_hygiene() {
 # are untouched. Stubbed budget 4096 + registry max_ctx 32768 give ctx 16384,
 # variant mini-qwen2.5-coder-7b:16k.
 case_run_override() {
-  local rc=0 out
+  local rc=0 out run_cfg
   new_override_home
 
   out="$(opencode_run 2>/dev/null)"
   check_has 'override run: launches with the override variant' \
     '-m ollama/mini-qwen2.5-coder-7b:16k' "$out" || rc=1
-  check_has 'override run: points at the run-scoped config' \
-    "cfg=${MINI_HOME}/opencode-run.json" "$out" || rc=1
+  run_cfg=$(printf '%s\n' "$out" | sed -n 's/^cfg=//p' | head -n1)
+  check_eq 'override run: the launch points at a config of its own' \
+    'not the live config' \
+    "$([ "$run_cfg" != "${MINI_HOME}/opencode.json" ] && printf 'not the live config' || printf 'the live config')" || rc=1
+  check_true 'override run: the run-scoped config exists' test -f "$run_cfg" || rc=1
+  check_has 'override run: the config it was handed declares that variant' \
+    'declared=ollama/mini-qwen2.5-coder-7b:16k' "$out" || rc=1
   check_file_has 'override run: config declares the override variant' \
-    '"model": "ollama/mini-qwen2.5-coder-7b:16k"' "${MINI_HOME}/opencode-run.json" || rc=1
+    '"model": "ollama/mini-qwen2.5-coder-7b:16k"' "$run_cfg" || rc=1
   check_file_has 'override run: config carries the 16k limit' \
-    '"limit": { "context": 16384, "output": 2048 }' "${MINI_HOME}/opencode-run.json" || rc=1
+    '"limit": { "context": 16384, "output": 2048 }' "$run_cfg" || rc=1
   check_eq 'override run: stored MINI_MODEL kept' \
     'mini-qwen2.5-coder-3b:16k' "$(cfg_get MINI_MODEL)" || rc=1
   check_eq 'override run: stored MINI_BASE_MODEL kept' \
@@ -348,15 +373,20 @@ case_run_override() {
 
 # (9) --model override, continuation path: `mini -c` resolves the same way.
 case_continue_override() {
-  local rc=0 out
+  local rc=0 out run_cfg
   new_override_home
 
   out="$(opencode_launch -c 2>/dev/null)"
   check_has 'override -c: launches with the override variant' \
     '-m ollama/mini-qwen2.5-coder-7b:16k' "$out" || rc=1
   check_has 'override -c: passes -c through to opencode' ' --auto -c' "$out" || rc=1
-  check_has 'override -c: points at the run-scoped config' \
-    "cfg=${MINI_HOME}/opencode-run.json" "$out" || rc=1
+  run_cfg=$(printf '%s\n' "$out" | sed -n 's/^cfg=//p' | head -n1)
+  check_eq 'override -c: the launch points at a config of its own' \
+    'not the live config' \
+    "$([ "$run_cfg" != "${MINI_HOME}/opencode.json" ] && printf 'not the live config' || printf 'the live config')" || rc=1
+  check_true 'override -c: the run-scoped config exists' test -f "$run_cfg" || rc=1
+  check_has 'override -c: the config it was handed declares that variant' \
+    'declared=ollama/mini-qwen2.5-coder-7b:16k' "$out" || rc=1
   check_eq 'override -c: live config byte-identical' 'same' "$(cmp -s \
     "${MINI_HOME}/live-before.json" "${MINI_HOME}/opencode.json" && printf same || printf changed)" || rc=1
 
@@ -429,25 +459,105 @@ case_launch_default() {
 # deterministically (variant missing, base missing, `ollama` itself failing),
 # so the pull inside it dies without network or daemon.
 case_override_failure() {
-  local rc=0 out status
+  local rc=0 out status case_tmp
   new_override_home
+
+  # A temp dir of this case's own: "nothing was left behind" has to be a
+  # statement about this case, not about the ones before it.
+  case_tmp="${TMPDIR}/case-failure"
+  mkdir -p "$case_tmp"
+
+  # Control: with the model present the run-scoped config lands in this
+  # case's temp dir — so the assertion below is not vacuous, about a
+  # directory mini never writes to.
+  out="$(TMPDIR="$case_tmp" opencode_run 2>&1)"; status=$?
+  check_eq 'failed override: the control run puts its config here' '1' \
+    "$(ls -1 "$case_tmp" 2>/dev/null | grep -c 'mini-opencode-run' || true)" || rc=1
+  rm -f "$case_tmp"/mini-opencode-run*
 
   ollama_has_model() { return 1; }  # the variant and the base are both "missing"
   ollama() { return 1; }            # so `ollama pull` fails and models_ensure dies
 
-  out="$(opencode_run 2>&1)"; status=$?
+  out="$(TMPDIR="$case_tmp" opencode_run 2>&1)"; status=$?
   check_fail 'failed override: exits non-zero' "$status" || rc=1
   check_has 'failed override: says why' 'could not pull' "$out" || rc=1
   check_lacks 'failed override: opencode never launched' 'cfg=' "$out" || rc=1
   check_lacks 'failed override: never falls back to the stored model' \
     'mini-qwen2.5-coder-3b:16k' "$out" || rc=1
-  if [ -e "${MINI_HOME}/opencode-run.json" ]; then
-    printf '  FAIL  %s\n         %s exists\n' \
-      'failed override: no run config written' "${MINI_HOME}/opencode-run.json"
-    rc=1
-  else
-    printf '  ok    %s\n' 'failed override: no run config written'
-  fi
+  check_eq 'failed override: no run-scoped config left behind' '0' \
+    "$(ls -1 "$case_tmp" 2>/dev/null | grep -c 'mini-opencode-run' || true)" || rc=1
+
+  override_hygiene
+  return $rc
+}
+
+# (13) Two overlapping --model runs must not share a config.
+#
+# The bug this pins: both runs wrote the same opencode-run.json, so the
+# second replaced the first's config before the first's opencode read it —
+# the first then launched a model its config no longer declared.
+#
+# The fake opencode here reports the model declared in the config it was
+# handed, and waits for a go-file before reading it. So the first run is held
+# open inside its fake while the second run writes and launches: exactly the
+# interleaving that breaks a shared path.
+case_override_concurrent() {
+  local rc=0 out_a out_b cfg_a cfg_b gate_a gate_b pid_a i=0
+  new_override_home
+
+  gate_a="${TMPDIR}/gate-a"; gate_b="${TMPDIR}/gate-b"
+  rm -rf "$gate_a" "$gate_b"
+  mkdir -p "$gate_a" "$gate_b"
+  : > "$gate_b/go"          # the second run waits for nobody
+
+  FAKE_OPENCODE="${MINI_HOME}/fake-opencode-wait"
+  cat > "$FAKE_OPENCODE" <<'SH'
+#!/usr/bin/env bash
+cfg="${OPENCODE_CONFIG:-}"
+printf 'cfg=%s\n' "$cfg"
+: > "${MINI_TEST_GATE}/ready"
+i=0
+while [ ! -e "${MINI_TEST_GATE}/go" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+printf 'declared=%s\n' "$(sed -n 's/^[[:space:]]*"model":[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" 2>/dev/null | head -n1)"
+printf '%s\n' "$*"
+SH
+  chmod +x "$FAKE_OPENCODE"
+  opencode_bin() { printf '%s' "$FAKE_OPENCODE"; }
+
+  # The first run, held open inside its fake opencode.
+  ( export MINI_TEST_GATE="$gate_a"
+    opencode_run > "${TMPDIR}/run-a.out" 2>&1 ) &
+  pid_a=$!
+
+  while [ ! -e "$gate_a/ready" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  check_true 'concurrent overrides: the first run reached opencode' \
+    test -e "$gate_a/ready" || rc=1
+
+  # The second run, on a different model, all the way through.
+  ( export MINI_FORCE_MODEL='llama3.2:3b'
+    opencode_run > "${TMPDIR}/run-b.out" 2>&1 ) || rc=1
+
+  # Now let the first run read the config it was handed.
+  : > "$gate_a/go"
+  wait "$pid_a"
+
+  out_a="$(cat "${TMPDIR}/run-a.out")"; out_b="$(cat "${TMPDIR}/run-b.out")"
+  cfg_a=$(printf '%s\n' "$out_a" | sed -n 's/^cfg=//p' | head -n1)
+  cfg_b=$(printf '%s\n' "$out_b" | sed -n 's/^cfg=//p' | head -n1)
+
+  check_eq 'concurrent overrides: the two runs got different configs' \
+    'different' \
+    "$([ -n "$cfg_a" ] && [ -n "$cfg_b" ] && [ "$cfg_a" != "$cfg_b" ] && printf different || printf same)" || rc=1
+  check_has 'concurrent overrides: the first run still declares its own model' \
+    'declared=ollama/mini-qwen2.5-coder-7b:16k' "$out_a" || rc=1
+  check_has 'concurrent overrides: the second run declares its own model' \
+    'declared=ollama/mini-llama3.2-3b:16k' "$out_b" || rc=1
+  check_has 'concurrent overrides: the first run launches its own variant' \
+    '-m ollama/mini-qwen2.5-coder-7b:16k' "$out_a" || rc=1
+  check_has 'concurrent overrides: the second run launches its own variant' \
+    '-m ollama/mini-llama3.2-3b:16k' "$out_b" || rc=1
+  check_eq 'concurrent overrides: the live config is untouched' 'same' \
+    "$(cmp -s "${MINI_HOME}/live-before.json" "${MINI_HOME}/opencode.json" && printf same || printf changed)" || rc=1
 
   override_hygiene
   return $rc
@@ -477,6 +587,7 @@ run_case "--model override: -c uses the variant + run config"          case_cont
 run_case "--model override: remote ignores it"                          case_run_override_remote_ignored
 run_case "no --model: stored model + live config"                       case_launch_default
 run_case "--model override: a failed resolution refuses to launch"       case_override_failure
+run_case "--model override: two overlapping runs keep their own config"   case_override_concurrent
 
 printf '\n%s passed, %s failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" -eq 0 ]

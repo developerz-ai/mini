@@ -252,7 +252,9 @@ mini --model qwen2.5-coder:14b -c             # or continue a session with it
 `--model` takes the same base id as `mini model`. For that invocation mini
 builds the derived `num_ctx` variant exactly like a switch — pulling the base
 the first time, so the first use of a new model is slow — and launches against
-a run-scoped `opencode-run.json` in the state dir instead of the live config.
+a run-scoped config of its own instead of the live config. That config is a
+per-invocation temp file, so two `mini --model` runs never share one: the
+second cannot replace the first's config under it.
 `mini config`, `mini status` and `mini doctor` keep reporting the stored model,
 and the next run without the flag is back on it.
 

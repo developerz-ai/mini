@@ -9,8 +9,10 @@
 # fallback must never overwrite an earlier recovery backup. The
 # fresh config must still be written and valid. The remote writer must leave
 # the file 0600 (it embeds the API key). A run-scoped write (the --model
-# override's opencode-run.json) carries the user's commands from the live
-# config and leaves that file byte-for-byte identical.
+# override's config) carries the user's commands from the live config and
+# leaves that file byte-for-byte identical. Every write builds its fresh
+# config in a temp file of its own and renames it into place, so two writes
+# racing for the same destination never share one temp file.
 #
 # PATH-stubbed contract test: inside every case PATH is a sandbox bin dir —
 # the real python3 symlinked in, or pointedly absent — so nothing here can
@@ -47,6 +49,21 @@ mkdir -p "$SANDBOX_BIN"
 for tool in cat sed tail grep touch mv cp chmod stat rm mktemp; do
   ln -s "$(command -v "$tool")" "$SANDBOX_BIN/$tool"
 done
+
+# The fresh config is renamed into place, and the source of that rename is the
+# per-write temp file. A wrapper around mv records what was renamed where, so
+# a case can assert on the temp files themselves — not on the shape of the
+# source.
+MV_LOG="$SANDBOX/mv.log"
+: > "$MV_LOG"
+REAL_MV="$(command -v mv)"
+rm -f "$SANDBOX_BIN/mv"
+cat > "$SANDBOX_BIN/mv" <<SH
+#!/bin/sh
+printf '%s\n' "\$*" >> "$MV_LOG"
+exec "$REAL_MV" "\$@"
+SH
+chmod +x "$SANDBOX_BIN/mv"
 
 PY3="$(command -v python3 || true)"
 if [ -z "$PY3" ]; then
@@ -196,6 +213,12 @@ case_regen_gpu_timeouts() {
 case_run_scoped_write() {
   PATH="$SANDBOX_BIN"; hash -r
   opencode_write_config 'mini-test:1b' 8192 "$SANDBOX/run-config.json" "$CFG"
+}
+case_two_writes_two_temps() {
+  : > "$MV_LOG"
+  PATH="$SANDBOX_BIN"; hash -r
+  opencode_write_config 'mini-test:7b' 32768
+  opencode_write_config 'mini-test:3b' 16384
 }
 
 # --- 1: first run, no previous config ----------------------------------------
@@ -402,6 +425,31 @@ assert_eq 'run-scoped: command block size (defaults + mytool)' '8' \
 assert_true 'run-scoped: live config byte-identical' \
   cmp -s "$SANDBOX/live-before.json" "$CFG"
 assert_eq 'run-scoped: no .bak beside the live config' 'absent' "$(bak_state "$CFG")"
+
+# --- 8: two writes, two temp files -----------------------------------------
+
+# The fresh config is built in a temp file and renamed into place. Two writes
+# racing for the same destination must not share that temp file: the second
+# would truncate the first's half-written config, and the rename would then
+# install a broken config. The mv wrapper recorded what was renamed where, so
+# this asserts the temp files themselves.
+
+run_case case_two_writes_two_temps
+assert_eq 'two writes: exit 0' '0' "$RUN_RC"
+assert_eq 'two writes: two renames' '2' "$(wc -l < "$MV_LOG")"
+MV_SOURCES=$(awk 'NF >= 3 { print $2 }' "$MV_LOG")
+SRC_ONE=$(printf '%s\n' "$MV_SOURCES" | sed -n '1p')
+SRC_TWO=$(printf '%s\n' "$MV_SOURCES" | sed -n '2p')
+assert_eq 'two writes: each renamed from a temp file of its own' 'different' \
+  "$([ -n "$SRC_ONE" ] && [ -n "$SRC_TWO" ] && [ "$SRC_ONE" != "$SRC_TWO" ] \
+     && printf different || printf same)"
+assert_eq 'two writes: the temp file is not the destination' 'not the destination' \
+  "$([ "$SRC_ONE" != "$CFG" ] && [ "$SRC_TWO" != "$CFG" ] \
+     && printf 'not the destination' || printf 'the destination')"
+assert_eq 'two writes: the temp file sits beside the destination' 'same dir' \
+  "$([ "$(dirname "$SRC_ONE")" = "$(dirname "$CFG")" ] \
+     && printf 'same dir' || printf 'elsewhere')"
+assert_true 'two writes: the live config is still valid JSON' json_ok "$CFG"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
