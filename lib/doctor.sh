@@ -59,6 +59,20 @@ doctor_tools_section() {
 doctor_run() {
   detect_all
 
+  # bin/mini dispatches doctor without load_platform, so the platform module is
+  # sourced here: the Host tools step needs platform_install_cmd_for to print
+  # fix lines. Same fallback as load_platform, but with no die — the Platform
+  # step below already reports unsupported distros, and doctor must still run
+  # far enough to say so.
+  local platform_mod="${MINI_PLATFORMS}/${OS_PLATFORM}.sh"
+  if [ -f "$platform_mod" ]; then
+    # shellcheck source=platforms/debian.sh
+    . "$platform_mod"
+  else
+    # shellcheck source=platforms/debian.sh
+    . "${MINI_PLATFORMS}/debian.sh"
+  fi
+
   step "Host"
   detect_summary
 
@@ -90,6 +104,25 @@ doctor_run() {
   done
   if has python3; then d_ok "python3 ${C_DIM}(better html→text for webfetch)${C_RESET}"
   else d_warn "python3 missing — webfetch falls back to crude tag stripping"; d_fix "sudo apt install -y python3"; fi
+
+  step "Host tools"
+  # Presence only: four independent lines, and none of them claims a service is
+  # running or that anything was installed. A missing tool gets a fix line
+  # printed by the platform module — doctor never executes an install.
+  local cmd
+  for cmd in ss systemctl ufw docker; do
+    if has "$cmd"; then
+      d_ok "$cmd"
+    else
+      case "$cmd" in
+        ss)        d_warn "ss missing — the agent cannot inspect listening ports or connections" ;;
+        systemctl) d_warn "systemctl missing — the agent cannot inspect or control services" ;;
+        ufw)       d_warn "ufw missing — the agent cannot check or change the firewall" ;;
+        docker)    d_warn "docker missing — the agent cannot inspect or manage containers" ;;
+      esac
+      d_fix "$(platform_install_cmd_for "$cmd")"
+    fi
+  done
 
   # Remote inference skips the whole local-server section.
   if [ "$(cfg_get MINI_PROVIDER)" = 'remote' ]; then

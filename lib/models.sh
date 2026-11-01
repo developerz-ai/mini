@@ -28,7 +28,8 @@ models_known() { [ -n "$(models_field "$1" 1)" ]; }
 
 # Pick the best model that fits BUDGET_MB.
 #
-# On CPU we stop at 3b regardless of how much RAM there is. Measured on an
+# On CPU we stop at qwen3:4b-instruct regardless of how much RAM there is.
+# Measured on an
 # ordinary CPU box: 7b generates ~2.5 tok/s, which is not an interactive agent
 # no matter how much memory you have. What actually decides whether a local
 # agent feels usable on CPU is time-to-first-token, and that is dominated by
