@@ -5,7 +5,8 @@ import path from "path"
 /**
  * Web search with no API key.
  *
- * The heavy lifting lives in a plain bash script at ~/.cache/mini/tools/websearch
+ * The heavy lifting lives in a plain bash script at <MINI_HOME>/tools/websearch
+ * (default ~/.cache/mini; honors XDG_CACHE_HOME when MINI_HOME is unset or empty)
  * so the same capability works from the shell, from a cron job, or from here.
  * This file only teaches the model that the capability exists.
  *
@@ -14,7 +15,8 @@ import path from "path"
  * other project the user opens.
  */
 const SCRIPT = path.join(
-  process.env.MINI_HOME || path.join(os.homedir(), ".cache", "mini"),
+  process.env.MINI_HOME ||
+    path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "mini"),
   "tools",
   "websearch",
 )
