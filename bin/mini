@@ -232,6 +232,13 @@ write_host_memory() {
   [ -n "${GPU_NAME:-}" ] && gpu="${GPU_NAME}"
   [ "${VRAM_MB:-0}" -gt 0 ] && gpu="${GPU_NAME} (${VRAM_MB} MB VRAM)"
 
+  # On a host without systemd the agent must know before it starts, or it
+  # runs `systemctl --failed` and reports a broken machine that is fine.
+  local init_note=''
+  if [ "${INIT_SYSTEM:-unknown}" != 'systemd' ]; then
+    init_note=' — systemd is not PID 1, so systemctl and journalctl do not work here'
+  fi
+
   cat > "$f" <<EOF
 # This machine
 
@@ -240,7 +247,7 @@ Written by \`mini setup\` on $(date -u '+%Y-%m-%d'). Facts, not preferences.
 - Hostname: $(hostname)
 - OS: ${OS_NAME} (id \`${OS_ID}\`, version \`${OS_VERSION}\`)
 - Package manager: apt (debian family)
-- Init: $( [ -d /run/systemd/system ] && echo systemd || echo 'not systemd' )
+- Init: ${INIT_SYSTEM:-unknown} (PID 1: ${INIT_PID1:-unknown})${init_note}
 - Shell: ${SHELL:-/bin/bash}
 - CPU: ${CPU_CORES} cores
 - RAM: ${RAM_MB} MB
@@ -561,4 +568,8 @@ main() {
   esac
 }
 
-main "$@"
+# Sourcing this file must not run the CLI: a test sources it to call the
+# functions above (write_host_memory) against a temporary MINI_HOME.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  main "$@"
+fi

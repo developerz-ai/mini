@@ -107,9 +107,11 @@ read runtime state in the install root.
 
 ## Testing
 
-There is no test suite; it is a wrapper around two binaries. Verify by running:
+mini is a wrapper around two binaries, not a framework, but it does carry shell
+tests under `tests/`. Run the test script first, then the manual checks:
 
 ```bash
+bash tests/init_test.sh                               # init detection + doctor Init step
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
 shellcheck bin/mini lib/*.sh                          # if available
 mini doctor                                           # must be clean

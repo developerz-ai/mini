@@ -89,6 +89,102 @@ On a box where you do not want passwordless sudo, this is working as intended.
 Use `mini --safe`, and run the privileged commands yourself when it hands them
 to you.
 
+## doctor: "systemd is not running — the composed diagnosis playbook does not apply"
+
+The `Init` step of `mini doctor` prints:
+
+```bash
+! systemd is not running (PID 1: <comm>) — the composed diagnosis playbook does not apply
+```
+
+mini builds its brain as `share/prompts/base.md` plus the module for your
+platform, and installs the result as `~/.cache/mini/AGENTS.md`. On a
+Debian-family host that module is `share/prompts/debian.md`, and it is written
+for a systemd box: `systemctl --failed`, `journalctl -u <unit>`,
+`systemctl cat`, `systemctl edit`. With no systemd running, every one of those
+returns an error instead of a diagnosis — so the agent reports a broken machine
+when the machine is fine.
+
+It is a warning, not a failure: the Init finding counts as a warning only, so
+a non-systemd host alone does not make `mini doctor` exit non-zero — another
+failing check still does. mini still runs, and the non-systemd half of the
+playbook (apt, disk, memory, processes) still applies. What does not apply is
+the systemd half. The step sits between
+`Platform` and `Privileges`, so it is printed on the local and the
+remote-inference runs alike, and the same fact is written to the `Init:` line
+of `~/.cache/mini/memories/00-host.md`, so the agent knows before it starts:
+
+```bash
+- Init: not systemd (PID 1: <comm>) — systemd is not PID 1, so systemctl and journalctl do not work here
+```
+
+The `Host` section of doctor prints the same fact as an `Init` summary line,
+so `mini setup` and `mini doctor` never disagree about it.
+
+**How the Init check decides.** For the `Init` step, PID 1 is the ground
+truth: systemd is the init system only when `/proc/1/comm` reads `systemd` —
+that is the process that actually is PID 1.
+
+`/run/systemd/system` is only a fallback, used when `/proc/1/comm` cannot be
+read at all. It is not proof: systemd's tmpfiles.d creates that directory at
+package-install time, so a stock Debian container image ships it while PID 1
+is still the image's own init. A `/run/systemd/system` directory next to a
+non-systemd PID 1 means systemd was *installed*, not that it is running.
+
+A `systemctl` binary on `PATH` proves nothing either — the same image ships
+that binary, and it answers every query with "System has not been booted with
+systemd as init system". The OS family and the distro are not evidence either.
+
+That rule governs the `Init` check and what the agent is told about it. It is
+not mini's rule everywhere: the ollama lifecycle (`lib/ollama.sh`) asks
+systemd itself whether systemd owns `ollama.service` — it looks for a
+`systemctl` binary and then runs `systemctl list-unit-files ollama.service`.
+There the question is "is this server run by a systemd unit on this box",
+not "is systemd PID 1", and on a host without systemd the query fails, so
+ollama is not treated as systemd-managed.
+
+**Fixes.** doctor prints all three fix lines on every host without systemd —
+not only when it can see that you are in a container, because only you know
+which one applies. Pick the one that matches your host.
+
+- **Boot systemd as PID 1.**
+
+  ```bash
+  systemd must be the init system (PID 1) — on a VM or bare metal, install and boot systemd; installing the systemctl package alone changes nothing
+  ```
+
+- **Start the container with systemd as init.** The image needs systemd
+  installed first: a stock Debian image ships no `/sbin/init`, so the command
+  below fails with "no such file or directory" until you add it.
+
+  ```bash
+  in a container, start systemd as init — the image needs systemd installed first (a stock Debian image has no /sbin/init): docker run --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw <image> /sbin/init
+  ```
+
+- **Keep mini on this host.** Edit `~/.cache/mini/AGENTS.md` and replace the
+  systemd steps with this host's init (OpenRC, SysVinit, runit, …). mini keeps
+  an edited brain: `mini setup` writes the new version to `AGENTS.md.new` and
+  leaves your file alone.
+
+  ```bash
+  to keep mini on this host, edit ~/.cache/mini/AGENTS.md (default ~/.cache/mini/AGENTS.md) and replace the systemd steps with this host's init
+  ```
+
+  (the path is `$MINI_HOME`, which defaults to `~/.cache/mini`.)
+
+**The `Host tools` step agrees.** `systemctl` is listed there, and on a host
+without systemd doctor says what that binary is worth instead of ticking the
+box:
+
+```bash
+  ! systemctl is installed but systemd is not PID 1 — systemctl and journalctl do not work here
+      fix: use this host's own init instead (see the Init step); installing the systemctl package alone changes nothing
+```
+
+When `systemctl` is not installed at all on such a host, the fix line is the
+same one — never "install systemd", because the package is not the problem. On
+a host where systemd really is PID 1, the line is a plain `✓ systemctl`.
+
 ## It is extremely slow
 
 ```bash

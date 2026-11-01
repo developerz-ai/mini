@@ -2,6 +2,17 @@
 
 apt + systemd. Applies to Debian, Ubuntu, Zorin, Mint, Pop!_OS, Raspberry Pi OS.
 
+## No systemd on this host
+
+If the host memory says `Init: not systemd`, PID 1 is not systemd: `systemctl`
+and `journalctl` fail with "System has not been booted with systemd as init
+system", so the systemd half of this playbook does not apply — skip
+`systemctl`, `journalctl` and every unit edit. Use this host's own init
+instead (`rc-service`/`rc-status` on OpenRC, `service` on SysVinit, `sv status`
+on runit) and read logs from `/var/log/` or `dmesg`. Never install systemd, and
+never install the `systemctl` package to "fix" this: the package is not the
+problem, and installing it changes nothing.
+
 ## Diagnose in this order
 
 It finds the cause faster than guessing:
