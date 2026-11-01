@@ -145,6 +145,7 @@ When the box cannot run a model fast enough, move only the inference:
 ```bash
 mini remote https://openrouter.ai/api/v1 qwen/qwen3-coder sk-or-...
 mini remote                  # interactive; the key prompt is hidden
+MINI_YES=1 mini remote       # unattended; re-applies the saved endpoint, empty key
 mini local                   # back to the local model
 ```
 
@@ -156,6 +157,20 @@ slash commands. `mini doctor` shows which mode you are in.
 
 The key lands `0600` in `~/.cache/mini/api-key`, and `opencode.json` becomes
 `0600` as well because it embeds the key.
+
+Under `MINI_YES=1` the key prompt is skipped: nothing is read from stdin, and an
+empty key is written to `~/.cache/mini/api-key` — `0600`, like any other key
+file. So `mini remote` never blocks on a secret in a script or a cloud-init
+run. The generated `opencode.json` then carries an empty `apiKey`, which is what
+a keyless endpoint wants; if the endpoint needs a real key, set it yourself
+afterwards or use the 3-argument form above.
+
+`MINI_YES=1` takes the URL and the model from what is already saved in
+`~/.cache/mini/config`, because there is nobody there to answer the prompts.
+It re-applies that endpoint; it does not set one up. With nothing configured
+yet it stops at `no URL given` and writes nothing at all — no key file, no
+config change. For a first-time setup use the 3-argument form above, which
+sets the URL, the model and the key in one go.
 
 ## Changing the model
 
