@@ -101,8 +101,9 @@ python3, the same opportunistic pattern as `opencode_validate_config`; the
 result is validated, and only then does it replace the live file. Managed
 commands always refresh to the current defaults. When merging is impossible —
 no python3, or an old config that does not parse — the old file is kept as
-`opencode.json.bak` and a warning names that path before the fresh config
-takes over. Nothing the user added disappears silently.
+`opencode.json.bak.XXXXXX` (a unique suffix for each fallback) and a warning
+names that path before the fresh config takes over. Existing recovery backups
+are never overwritten. Nothing the user added disappears silently.
 
 mini never edits `~/.config/opencode/opencode.json`. It sets `OPENCODE_CONFIG`
 instead, so a user who also runs opencode against a cloud provider keeps that
@@ -155,5 +156,5 @@ pure-shell fallback. No `jq`: mini generates JSON with `printf`. Apart from
 read-back of the file it just generated, the only place mini parses JSON is the
 old config's `command` block, to carry a user's custom slash commands across a
 regeneration. Without python3 there is no merge: the old config is kept as
-`opencode.json.bak` and the fresh one written beside it, so a minimal box loses
+a unique `opencode.json.bak.XXXXXX` and the fresh one written beside it, so a minimal box loses
 convenience, never data.

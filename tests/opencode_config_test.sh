@@ -5,7 +5,8 @@
 # (provider, model, small_model, limits, managed slash commands) but never
 # destroy the user's own slash commands. When the merge cannot run — no
 # python3, or a previous config that does not parse — the old file must be
-# kept byte-for-byte as opencode.json.bak with a warning printed, and the
+# kept byte-for-byte in a unique opencode.json.bak.* with a warning, and the eager
+# fallback must never overwrite an earlier recovery backup. The
 # fresh config must still be written and valid. The remote writer must leave
 # the file 0600 (it embeds the API key).
 #
@@ -41,7 +42,7 @@ OLLAMA_HOST='127.0.0.1:11434'   # pin the baseURL the generated config embeds
 # inside a case, so a stray ollama/opencode/curl call fails loudly.
 SANDBOX_BIN="$SANDBOX/bin"
 mkdir -p "$SANDBOX_BIN"
-for tool in cat sed tail grep touch mv cp chmod stat rm; do
+for tool in cat sed tail grep touch mv cp chmod stat rm mktemp; do
   ln -s "$(command -v "$tool")" "$SANDBOX_BIN/$tool"
 done
 
@@ -85,7 +86,7 @@ assert_not_warned() { # <log> <desc>: the merge-impossible warning was NOT print
   esac
 }
 file_mode() { stat -c %a "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
-bak_state() { [ -e "$1.bak" ] && printf present || printf absent; }
+bak_state() { compgen -G "$1.bak*" >/dev/null && printf present || printf absent; }
 
 run_case() { # <fn> [args]: run a case body in a subshell; capture log and rc
   RUN_LOG="$("$@" 2>&1)"
@@ -175,8 +176,8 @@ case_unparsable_old() {
 case_no_python3() {
   mkdir -p "$SANDBOX/bin-nopython"
   local tool
-  for tool in cat sed tail grep touch mv cp chmod stat rm; do
-    ln -s "$SANDBOX_BIN/$tool" "$SANDBOX/bin-nopython/$tool"
+  for tool in cat sed tail grep touch mv cp chmod stat rm mktemp; do
+    ln -sf "$SANDBOX_BIN/$tool" "$SANDBOX/bin-nopython/$tool"
   done
   PATH="$SANDBOX/bin-nopython"; hash -r   # python3 pointedly absent
   opencode_write_config 'mini-test:3b' 16384
@@ -271,8 +272,12 @@ printf '{ this is not json at all\n' > "$CFG"
 cp "$CFG" "$SANDBOX/old-unparsable.json"
 run_case case_unparsable_old
 assert_eq 'unparsable old: exit 0 (fallback, not failure)' '0' "$RUN_RC"
-assert_true 'unparsable old: kept byte-for-byte as .bak' \
-  cmp -s "$SANDBOX/old-unparsable.json" "${CFG}.bak"
+BACKUPS=("${CFG}".bak*)
+UNPARSABLE_BACKUP="${BACKUPS[0]}"
+assert_true 'unparsable old: kept byte-for-byte in recovery backup' \
+  cmp -s "$SANDBOX/old-unparsable.json" "$UNPARSABLE_BACKUP"
+assert_true 'unparsable old: warning names recovery path' \
+  grep -qF "$UNPARSABLE_BACKUP" <<< "$RUN_LOG"
 assert_warned "$RUN_LOG" 'unparsable old: warning printed'
 assert_true 'unparsable old: fresh config valid' json_ok "$CFG"
 assert_true 'unparsable old: fresh config carries the defaults' default_cmds_ok "$CFG"
@@ -283,14 +288,44 @@ seed_user_command "$CFG" mytool
 cp "$CFG" "$SANDBOX/old-valid.json"
 run_case case_no_python3
 assert_eq 'no python3: exit 0 (fallback, not failure)' '0' "$RUN_RC"
-assert_true 'no python3: old config kept byte-for-byte as .bak' \
-  cmp -s "$SANDBOX/old-valid.json" "${CFG}.bak"
+BACKUPS=("${CFG}".bak*)
+assert_eq 'no python3: a second recovery backup exists' '2' "${#BACKUPS[@]}"
+USER_BACKUP=''
+for backup in "${BACKUPS[@]}"; do
+  if cmp -s "$SANDBOX/old-valid.json" "$backup"; then USER_BACKUP="$backup"; fi
+done
+assert_true 'no python3: user config preserved byte-for-byte' test -n "$USER_BACKUP"
+assert_true 'no python3: earlier recovery backup unchanged' \
+  cmp -s "$SANDBOX/old-unparsable.json" "$UNPARSABLE_BACKUP"
+assert_true 'no python3: warning names user recovery path' \
+  grep -qF "${USER_BACKUP:-missing-backup}" <<< "$RUN_LOG"
 assert_warned "$RUN_LOG" 'no python3: warning printed'
 assert_true 'no python3: fresh config valid' json_ok "$CFG"
 assert_eq 'no python3: fresh config written anyway' 'ollama/mini-test:3b' \
   "$(json_get "$CFG" "d['model']")"
 assert_false 'no python3: nothing carried (merge skipped, file preserved)' \
   grep -qF 'mytool' "$CFG"
+
+# Repeated fallback must not replace either recovery file with defaults-only JSON.
+cp "$CFG" "$SANDBOX/old-defaults.json"
+run_case case_no_python3
+assert_eq 'repeated no python3: exit 0' '0' "$RUN_RC"
+assert_warned "$RUN_LOG" 'repeated no python3: warning printed'
+BACKUPS=("${CFG}".bak*)
+assert_eq 'repeated no python3: a third recovery backup exists' '3' "${#BACKUPS[@]}"
+assert_true 'repeated no python3: user recovery backup unchanged' \
+  cmp -s "$SANDBOX/old-valid.json" "$USER_BACKUP"
+assert_true 'repeated no python3: unparsable recovery backup unchanged' \
+  cmp -s "$SANDBOX/old-unparsable.json" "$UNPARSABLE_BACKUP"
+for backup in "${BACKUPS[@]}"; do
+  if [ "$backup" != "$USER_BACKUP" ] && [ "$backup" != "$UNPARSABLE_BACKUP" ]; then
+    assert_true 'repeated no python3: defaults saved separately' \
+      cmp -s "$SANDBOX/old-defaults.json" "$backup"
+    assert_true 'repeated no python3: warning names new recovery path' \
+      grep -qF "$backup" <<< "$RUN_LOG"
+  fi
+done
+assert_true 'repeated no python3: fresh config valid' json_ok "$CFG"
 
 # --- 5: parseable old config with no command block — nothing to carry --------
 
@@ -299,7 +334,7 @@ assert_false 'no python3: nothing carried (merge skipped, file preserved)' \
 # contract): the regeneration succeeds with no .bak, no warning, and the
 # fresh config carries the defaults and the new model.
 
-rm -f "${CFG}.bak"   # drop the fallback file section 4 left behind
+rm -f "${CFG}".bak*   # drop the fallback files section 4 left behind
 printf '{\n  "model": "ollama/old",\n  "small_model": "ollama/old"\n}\n' > "$CFG"
 run_case case_no_command_block
 assert_eq 'no command block: exit 0 (nothing to carry, not a fallback)' '0' "$RUN_RC"

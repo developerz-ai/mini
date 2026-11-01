@@ -103,14 +103,16 @@ PY
 #   opencode_install_config <fresh-tmp> <live>
 #
 # The merge runs first; when it cannot (no python3, or an old config that does
-# not parse), the old file is kept as <live>.bak and the user is warned — a
+# not parse), the old file is kept as <live>.bak.XXXXXX and the user is warned — a
 # regeneration never silently destroys their edits. Only a config that
 # validates replaces the live one.
 opencode_install_config() {
-  local fresh="$1" live="$2"
+  local fresh="$1" live="$2" backup
   if ! opencode_merge_commands "$fresh" "$live"; then
-    cp -p "$live" "${live}.bak"
-    warn "could not carry your custom slash commands into the new config — the previous config is kept as ${live}.bak"
+    # Reserve a unique path so repeated fallbacks never erase recovery data.
+    backup=$(mktemp "${live}.bak.XXXXXX") || return 1
+    cp -p "$live" "$backup" || return 1
+    warn "could not carry your custom slash commands into the new config — the previous config is kept as ${backup}"
   fi
   opencode_validate_config "$fresh"
   mv -f "$fresh" "$live"

@@ -73,8 +73,10 @@ one of those does not survive: give a modified version a different name
 (`/space-fast`) and it is yours.
 
 If regeneration cannot merge — no python3, or an existing config mini cannot
-read — the previous config is kept as `opencode.json.bak` next to the new one.
-Nothing you added is silently destroyed.
+read — the previous config is kept as `opencode.json.bak.XXXXXX` next to the
+new one, with a unique suffix for each fallback. The warning names the recovery
+file; existing backups are never overwritten by later regenerations. Nothing
+you added is silently destroyed.
 
 ## Approvals
 
