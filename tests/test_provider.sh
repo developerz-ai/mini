@@ -533,8 +533,11 @@ SH
   check_true 'concurrent overrides: the first run reached opencode' \
     test -e "$gate_a/ready" || rc=1
 
-  # The second run, on a different model, all the way through.
+  # The second run, on a different model, all the way through. It gets its
+  # own gate too, so its fake opencode writes the ready file inside this
+  # sandbox and is released at once by the go-file prepared above.
   ( export MINI_FORCE_MODEL='llama3.2:3b'
+    export MINI_TEST_GATE="$gate_b"
     opencode_run > "${TMPDIR}/run-b.out" 2>&1 ) || rc=1
 
   # Now let the first run read the config it was handed.
