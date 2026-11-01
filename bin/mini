@@ -255,6 +255,13 @@ write_host_memory() {
   local os_name="${OS_NAME:-unknown}" os_id="${OS_ID:-unknown}" os_version="${OS_VERSION:-unknown}"
   local cpu_cores="${CPU_CORES:-unknown}" ram_mb="${RAM_MB:-unknown}" disk_free="${DISK_FREE_GB:-unknown}"
 
+  # On a host without systemd the agent must know before it starts, or it
+  # runs `systemctl --failed` and reports a broken machine that is fine.
+  local init_note=''
+  if [ "${INIT_SYSTEM:-unknown}" != 'systemd' ]; then
+    init_note=' — systemd is not PID 1, so systemctl and journalctl do not work here'
+  fi
+
   {
     cat <<EOF
 # This machine
@@ -264,7 +271,7 @@ Written by \`mini setup\` or \`mini sudo\` on $(date -u '+%Y-%m-%d'). Facts, not
 - Hostname: $(hostname)
 - OS: ${os_name} (id \`${os_id}\`, version \`${os_version}\`)
 - Package manager: apt (debian family)
-- Init: $( [ -d /run/systemd/system ] && echo systemd || echo 'not systemd' )
+- Init: ${INIT_SYSTEM:-unknown} (PID 1: ${INIT_PID1:-unknown})${init_note}
 - Shell: ${SHELL:-/bin/bash}
 - CPU: ${cpu_cores} cores
 - RAM: ${ram_mb} MB
@@ -601,7 +608,7 @@ main() {
 }
 
 # Dispatch only when this file is executed. Tests source it to call the
-# functions directly; without the guard, sourcing would run the CLI.
+# functions directly against a temporary MINI_HOME; sourcing must not run the CLI.
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   main "$@"
 fi
