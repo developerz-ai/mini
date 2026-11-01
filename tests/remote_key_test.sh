@@ -9,7 +9,13 @@
 #                   and an empty 0600 key file is written.
 #   B) no MINI_YES — the prompt still reads the key from stdin and that key
 #                   lands in the 0600 key file.
+#
+# The result must not depend on the caller's environment. MINI_YES is
+# exported here on purpose: it poisons the ambient environment, so case B
+# has to remove it from the child explicitly instead of inheriting it by
+# accident.
 set -euo pipefail
+export MINI_YES=1
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 MINI_BIN="${REPO_ROOT}/bin/mini"
@@ -53,6 +59,10 @@ seed() {
 #
 # Pipes a sentinel line into mini and then reads whatever is left of the pipe.
 # What is left is exactly what mini did not read from stdin.
+#
+# Each child gets its own explicit environment: the yes-mode child sets
+# MINI_YES=1, the no-mode child has MINI_YES removed with env -u, so neither
+# one can pick the flag up from the caller.
 run_mini() {
   local name="$1" mode="$2" home="$3" mini_home="$4"
   printf '%s\n' "$SENTINEL" | {
@@ -61,7 +71,7 @@ run_mini() {
       HOME="$home" MINI_HOME="$mini_home" MINI_YES=1 PATH="${STUB_BIN}:${PATH}" \
         bash "$MINI_BIN" remote > "${TMP}/${name}.out" 2> "${TMP}/${name}.err" || rc=$?
     else
-      HOME="$home" MINI_HOME="$mini_home" PATH="${STUB_BIN}:${PATH}" \
+      env -u MINI_YES HOME="$home" MINI_HOME="$mini_home" PATH="${STUB_BIN}:${PATH}" \
         bash "$MINI_BIN" remote > "${TMP}/${name}.out" 2> "${TMP}/${name}.err" || rc=$?
     fi
     printf '%s\n' "$rc" > "${TMP}/${name}.rc"
