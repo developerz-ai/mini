@@ -60,10 +60,12 @@ Unmeasurable VRAM never inflates the budget. If `nvidia-smi` and `rocm-smi` are
 both absent, a card found via `lspci` is named in the report but counts as zero
 — a driver-less GPU cannot run anything.
 
-`lib/models.sh` walks `share/models.tsv` best → smallest and takes the first row
-that fits. On CPU it skips everything above `qwen2.5-coder:7b`: a 24B model on
-CPU produces a couple of tokens a second, which is not an interactive agent.
-`mini model <id>` overrides this.
+For auto-selection, `lib/models.sh` walks `share/models.tsv` best → smallest and
+takes the first row that fits. On CPU it skips registry rows before the
+`qwen3:4b-instruct` cap, then takes the first row that fits starting at that cap
+row: a 7B model generates about 2.5 tokens a second on CPU, which is not an
+interactive agent. GPU selection is uncapped and takes the first fitting row
+from the full registry. `mini model <id>` overrides this auto-selection.
 
 ## The context variant
 
@@ -133,8 +135,10 @@ either as a tool call or a plain command on `PATH`.
 ## Platforms
 
 `detect_os` maps `/etc/os-release` onto a platform id; `platforms/<id>.sh`
-implements four functions. Nothing in `lib/` may mention a package manager — if
-it does, that is the bug. See [platforms/README.md](../platforms/README.md).
+implements five functions. Doctor's Host tools step gets its missing-tool
+fix lines from `platform_install_cmd_for`, which is why nothing in `lib/`
+may mention a package manager — if it does, that is the bug. See
+[platforms/README.md](../platforms/README.md).
 
 ## Dependencies
 

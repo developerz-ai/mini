@@ -13,6 +13,7 @@
 set -uo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+MINI_PLATFORMS="${ROOT}/platforms"
 
 # mini's state lives in one directory. It has to exist before the libs are
 # sourced: lib/ollama.sh reads MINI_HOME at source time.
