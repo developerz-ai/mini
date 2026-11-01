@@ -72,7 +72,8 @@ ollama_bind_local() {
       || die "could not apply tuning while rebinding"
     # A matching drop-in early-returns from the writer without a restart;
     # a stopped unit would stay stopped and the wait below would time out.
-    ollama_up || _mini_sudo systemctl restart ollama || true
+    ollama_up || _mini_sudo systemctl restart ollama \
+      || die "could not restart ollama while rebinding"
     ollama_wait 30 || die "ollama did not come back up"
     ok "ollama rebound to ${OLLAMA_HOST_ADDR}"
   else
@@ -121,7 +122,7 @@ ollama_start() {
 
 # The same tuning as the user-process path, for the systemd-managed server.
 # Written as a drop-in so ollama's own packaging can still update the unit.
-# Returns non-zero when the write fails: best-effort callers `|| true` it,
+# Returns non-zero when writing or applying fails: best-effort callers `|| true` it,
 # ollama_bind_local dies on it.
 ollama_write_systemd_dropin() {
   local dir='/etc/systemd/system/ollama.service.d'
@@ -157,8 +158,14 @@ Environment=\"OLLAMA_HOST=${OLLAMA_HOST_ADDR}\""
     warn "could not write ${file} — ollama keeps its defaults"
     return 1
   }
-  _mini_sudo systemctl daemon-reload >/dev/null 2>&1 || true
-  _mini_sudo systemctl restart ollama >/dev/null 2>&1 || true
+  _mini_sudo systemctl daemon-reload >/dev/null 2>&1 || {
+    warn "could not reload systemd — run: sudo -n systemctl daemon-reload"
+    return 1
+  }
+  _mini_sudo systemctl restart ollama >/dev/null 2>&1 || {
+    warn "could not restart ollama — run: sudo -n systemctl restart ollama"
+    return 1
+  }
   ok "tuned ollama for agent use (serialised requests, 30m keep-alive)"
 }
 
