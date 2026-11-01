@@ -131,9 +131,9 @@ mini (bash)
 ├── config              # chosen model, context size
 ├── opencode.json       # provider, model, instructions, slash commands
 ├── AGENTS.md           # the brain: base prompt + platform prompt
-├── memories/
-│   ├── 00-host.md      # OS, CPU, RAM, GPU, sudo — refreshed on setup
-│   └── 10-learned.md   # what you told it to remember
+├── memories/           # created by the writer itself, on demand
+│   ├── 00-host.md      # OS, CPU, RAM, GPU, sudo — written by setup and 'mini sudo'
+│   └── 10-learned.md   # what you told it to remember — never rewritten by the host writer
 ├── tools/              # websearch, webfetch, sysreport (bash)
 └── logs/
 ```
@@ -224,6 +224,17 @@ mini sudo        # grants passwordless sudo, after showing you what that means
 
 `mini sudo` writes `/etc/sudoers.d/90-mini-<user>`, validated with `visudo -c`
 before install. Undo with `sudo rm /etc/sudoers.d/90-mini-<user>`.
+
+It also refreshes `00-host.md`, the agent's memory of the machine, so the
+agent knows passwordless sudo works and it can act. The refresh happens when
+passwordless sudo is verified to work: right after the sudoers file is
+installed and `sudo -n true` succeeds, when it already worked, or on a box
+running as root. If the file installs but sudo still prompts, mini says so and
+leaves `00-host.md` alone rather than record a capability the agent does not
+have. The writer creates `$MINI_HOME/memories`
+(`~/.cache/mini/memories` by default) itself, so those host facts land even
+when `mini setup` never ran. Only `00-host.md` is rewritten — `10-learned.md`
+and the rest of that directory are left exactly as they were.
 
 Right for a dev box, a VPS you own, or a VM you can rebuild. Wrong for a shared
 or production machine — there, use `mini --safe` and run privileged commands
