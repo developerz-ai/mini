@@ -14,3 +14,8 @@ For each unhealthy signal, one ask, unless an open issue already carries its exa
 Titles are stable: nothing that changes run to run (sha, run URL) goes in one; that goes in the body,
 with the command and its output. Unreadable evidence is no verdict: re-run it, never file it as a defect.
 A red `main` comes first.
+
+## Rows
+
+- `main-green`: `main` is green — `success` on the `origin/main` tip; a null conclusion or another sha is no verdict.
+- `dependabot-not-stuck`: Dependabot is not stuck — no PR with failed checks and more than 7 days since `updatedAt`.
