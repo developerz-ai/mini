@@ -10,6 +10,7 @@
 MODELS_TSV="${MINI_SHARE}/models.tsv"
 
 # Emit "id min_budget max_ctx class note" per registry row, comments stripped.
+# The class column is not read by anything yet, so callers bind it to _class.
 #
 # Repeated tabs are squeezed: the registry is hand-edited and aligned by eye, so
 # a row padded with two tabs would otherwise shift every field after it and
@@ -146,7 +147,7 @@ models_ensure() {
 # Echoes the chosen model id on stdout; everything else goes to stderr so the
 # caller can capture the answer cleanly.
 models_choose() {
-  local recommended installed n=0 id min_mb max_ctx class note
+  local recommended installed n=0 id min_mb max_ctx _class note
   recommended=$(models_recommend)
   installed=$(ollama list 2>/dev/null | awk 'NR>1{print $1}' || true)
 
@@ -162,7 +163,7 @@ models_choose() {
   # second list with the reason attached rather than at the top where it looks
   # like the best option.
   local past_cap=0
-  while IFS=$'\t' read -r id min_mb max_ctx class note; do
+  while IFS=$'\t' read -r id min_mb max_ctx _class note; do
     [ -n "$id" ] || continue
     [ "${BUDGET_MB:-0}" -ge "$min_mb" ] || continue
 
@@ -175,7 +176,7 @@ models_choose() {
       usable=0
     fi
 
-    local tag='' ctx_here line
+    local tag='' ctx_here
     printf '%s\n' "$installed" | grep -qx -- "$id" && tag=" ${C_DIM}(pulled)${C_RESET}"
     ctx_here=$(models_pick_ctx "$id")
 
@@ -232,14 +233,17 @@ EOF
 
 # `mini models` — registry, fit, and what is on disk.
 models_list() {
-  local refresh="${1:-}" current installed id min_mb max_ctx class note
+  local refresh="${1:-}" current installed id min_mb max_ctx _class note
   current=$(cfg_get MINI_BASE_MODEL)
-  installed=$(ollama_up && ollama list 2>/dev/null | awk 'NR>1{print $1}' || true)
+  installed=''
+  if ollama_up; then
+    installed=$(ollama list 2>/dev/null | awk 'NR>1{print $1}' || true)
+  fi
 
   step "Models for this machine ${C_DIM}(budget ${BUDGET_MB} MB, ${ACCEL})${C_RESET}"
   printf '  %-20s %-8s %-8s %-9s %s\n' 'MODEL' 'NEEDS' 'CTX' 'STATUS' 'NOTE'
 
-  while IFS=$'\t' read -r id min_mb max_ctx class note; do
+  while IFS=$'\t' read -r id min_mb max_ctx _class note; do
     [ -n "$id" ] || continue
     local status='' mark=' '
     [ "$id" = "$current" ] && mark='*'
