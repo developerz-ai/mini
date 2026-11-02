@@ -215,7 +215,8 @@ ollama_stop() {
   fi
   if ollama_systemd_managed && systemctl is-active --quiet ollama; then
     warn "ollama runs under systemd — stop it with: sudo systemctl stop ollama"
-    return 0
+    return 1
+
   fi
   dim "nothing to stop"
 }
