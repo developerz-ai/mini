@@ -8,11 +8,11 @@ policy file are off limits. A red `main` and a stuck Dependabot PR belong to `he
 
 ## Pick at most three, in this order
 
-1. Anything the gate on fresh `main` found broken or flaky (`for t in tests/*_test.sh; do bash "$t"; done`): the root cause, never a retry or a skip.
+1. Anything the gate on fresh `main` found broken or flaky (`for t in tests/*.sh; do bash "$t" || exit 1; done`): the root cause, never a retry or a skip.
 2. Open bugs (`gh issue list --state open --label bug --json number,title,url`), each starting from a test that fails on `main`.
 3. `CLAUDE.md` and README claims that no longer match the code, then dead code.
 
 ## Ship
 
-One small PR per improvement, its evidence in the body, `for t in tests/*_test.sh; do bash "$t"; done` green first. Never bump the version or touch release automation here.
+One small PR per improvement, its evidence in the body, `for t in tests/*.sh; do bash "$t" || exit 1; done` green first. Never bump the version or touch release automation here.
 Check no open PR or issue already covers it. If nothing is worth changing, do nothing: no empty PRs, no churn.
