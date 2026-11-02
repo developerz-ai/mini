@@ -16,3 +16,9 @@ policy file are off limits. A red `main` and a stuck Dependabot PR belong to `he
 
 One small PR per improvement, its evidence in the body, `for t in tests/*.sh; do bash "$t" || exit 1; done` green first. Never bump the version or touch release automation here.
 Check no open PR or issue already covers it. If nothing is worth changing, do nothing: no empty PRs, no churn.
+
+## Rows
+
+- `gate-broken-or-flaky`: Fix the root cause of anything the gate on fresh `main` found broken or flaky (`for t in tests/*.sh; do bash "$t" || exit 1; done`), never a retry or a skip.
+- `open-bugs`: Address open bugs (`gh issue list --state open --label bug --json number,title,url`), each starting from a test that fails on `main`.
+- `stale-claims-and-dead-code`: Correct `CLAUDE.md` and README claims that no longer match the code, then address dead code.
