@@ -40,7 +40,7 @@ mini wraps two binaries, so most checks are syntax, lint, doctor and a real turn
 |---|---|---|
 | syntax | `bash -n <only the files it edited>` | `bash -n bin/mini lib/*.sh platforms/*.sh install.sh` |
 | lint | `shellcheck <only the files it edited>` (if installed) | `shellcheck bin/mini lib/*.sh` |
-| tests | `bash tests/init_test.sh` (when the slice touches init detection or doctor's Init step) | `bash tests/init_test.sh` |
+| tests | `bash tests/init_test.sh` (when the slice touches init detection or doctor's Init step) | `bash .github/run-tests.sh` (the whole offline suite) |
 | doctor + live | — | `mini doctor` clean; `mini "what is wrong with this machine"`; then `mini model qwen2.5-coder:3b && mini "check disk"` |
 
 An agent owns *its own files*; whole-repo green is the coordinator's job and nobody else's. **Never let an agent run `mini doctor` or a live turn** — one ollama server, `OLLAMA_NUM_PARALLEL=1`, one resident model and one generated `opencode.json` mean two concurrent turns thrash, and a cold CPU prefill is already minutes. Queue any turn a slice needs and run it yourself. Selection-path coverage is not parallelisable either: the GPU and no-GPU paths in `lib/detect.sh` / `lib/models.sh` differ and you have one box — say which you exercised rather than claiming both.
@@ -86,7 +86,7 @@ An agent owns *its own files*; whole-repo green is the coordinator's job and nob
 
    Small change → one agent, or just do it yourself.
 
-7. **Verify.** Run the full gate yourself, once: `bash -n bin/mini lib/*.sh platforms/*.sh install.sh`; `shellcheck bin/mini lib/*.sh`; `mini doctor` clean; a real turn (`mini "what is wrong with this machine"`) plus a second model (`mini model qwen2.5-coder:3b && mini "check disk"`). If the change touched prompts, tools or `num_ctx`, report the `task.n_tokens` delta — prompt size is the CPU latency budget.
+7. **Verify.** Run the full gate yourself, once: `bash -n bin/mini lib/*.sh platforms/*.sh install.sh`; `shellcheck bin/mini lib/*.sh`; `bash .github/run-tests.sh`; `mini doctor` clean; a real turn (`mini "what is wrong with this machine"`) plus a second model (`mini model qwen2.5-coder:3b && mini "check disk"`). The test runner is offline and needs no live model. If the change touched prompts, tools or `num_ctx`, report the `task.n_tokens` delta — prompt size is the CPU latency budget.
 
 8. **Commit + merge.** **Sweep the agents' leftovers first**: scratch scripts, debug `echo`s, stray probes at the repo root. Agents create them and rarely clean up. Let every agent finish, then plain git — you are already on the branch from step 6:
 
@@ -100,7 +100,7 @@ An agent owns *its own files*; whole-repo green is the coordinator's job and nob
 
    **Main moves under you.** `git fetch` and intersect *files changed on main* with *files changed locally*; a real overlap is **three-way merged** (`git merge-file -p ours base theirs`), never taken wholesale — a naive build drops main's lines silently, with no conflict marker.
 
-   Then `gh pr create` and `gh pr merge --squash`. This repo has **no CI workflows**, so there is nothing to wait for — which cuts both ways: nothing but you catches a syntax error, so step 7 *is* the gate. (If checks ever appear: **0 registered checks reads as "pass"**.)
+   Then `gh pr create` and `gh pr merge --squash`. CI runs the offline suite plus the syntax and lint checks, so there *is* something to wait for: the `tests` job runs `bash .github/run-tests.sh` and the `shell-checks` job runs `bash -n` and ShellCheck. Both job ids are in `pr.required_checks`, so a red test blocks the merge — step 7 is your own gate, CI is the second one. Never merge around a red check, and never treat a skipped script as a failure: the runner decides by exit code alone.
 
 9. **Leave the trail straight.** Update the `README.md` / `docs/` page your change invalidated **in the same PR** — a stale doc about a wrapper this small is worse than none. When a defect could recur and a check can catch it, add it to `lib/doctor.sh` in the same PR, with the exact fixing command (a check with no fix is not a check).
 
@@ -117,7 +117,7 @@ Root cause:  <the one-line mechanism, for a bug>
 Fixed:       <n> findings across <m> PRs → #…
 Deferred:    <n> — <what, and why not now>            [never omit this line]
 Falsified:   <doc / models.tsv / README claims corrected>
-Checks:      bash -n <ok>  shellcheck <ok|absent>  mini doctor <clean?>
+Checks:      bash -n <ok>  shellcheck <ok|absent>  tests <ok>  mini doctor <clean?>
 Live run:    <prompt, model, what came back>   prompt size: <n_tokens before → after>
 Paths:       <GPU / no-GPU — which you actually exercised>
 Doctor:      <check added to lib/doctor.sh, or none>

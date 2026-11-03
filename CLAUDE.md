@@ -109,21 +109,55 @@ read runtime state in the install root.
 ## Testing
 
 mini is a wrapper around two binaries, not a framework, but it does carry plain
-bash tests under `tests/`. Run the offline test scripts first, starting with
-`tests/test_provider.sh` for provider and launch selection, then the manual
-checks:
-
-The webfetch truncation/failure contract has a self-test (`tests/webfetch.sh`).
-When changing capture or truncation, compare output byte for byte against the
-fixture with zero, one, and multiple trailing newlines, below and at the cap.
-Preserve newlines with a capture sentinel, keep converter failures non-zero,
-and test Python character slicing with multibyte input under `LC_ALL=C`.
+bash tests under `tests/`. There is no test framework — the checks are plain
+bash scripts, and one command runs them all:
 
 ```bash
-bash tests/test_provider.sh      # provider/launch selection
-bash tests/init_test.sh          # init detection + doctor Init step
-bash tests/remote_key_test.sh    # offline, no network, no framework
+bash .github/run-tests.sh    # the whole offline suite
 ```
+
+The runner is `.github/run-tests.sh`, invoked as `bash .github/run-tests.sh`
+from the repo root. With no arguments its default member list is every
+`tests/*.sh` in the repo — all nine today:
+
+| Script | What it pins |
+|---|---|
+| `host_memory_test.sh` | `write_host_memory` — the writer of `$MINI_HOME/memories/00-host.md` |
+| `init_test.sh` | init-system detection + doctor's Init step |
+| `mini_bin_dir_test.sh` | the PATH the agent inherits, and the `/remember` command |
+| `model_flag_test.sh` | the missing-argument refusal of `mini --model` |
+| `ollama_systemd_failure_test.sh` | systemd rebind and stop refusals — a failure is reported, not swallowed |
+| `opencode_config_test.sh` | the `opencode.json` regeneration contract (skips without python3) |
+| `remote_key_test.sh` | the API-key prompt of `mini remote` |
+| `test_provider.sh` | provider and launch selection |
+| `webfetch.sh` | webfetch truncation + failure contract (PATH-stubbed, no network) |
+
+It accepts an explicit list of script paths as arguments; that list overrides
+its default member list. Each member runs as its own process (`bash "$t"`), so
+one member's exported environment cannot leak into the next. The runner decides
+by **exit code alone** — never by grepping the output for `FAIL`/`SKIP`. A
+script that prints `SKIP` under its own contract (no python3, running as root)
+still exits 0 and stays green.
+
+Every test is hermetic: its own `mktemp` sandbox and no dependence on host
+services. Scripts that could reach an external command isolate it themselves —
+with PATH stubs for curl/w3m/systemctl/sudo/nvidia-smi/rocm-smi/lspci, fixed
+system-only PATHs, or shell-function stubs — and literal URLs are never fetched.
+For example, `model_flag_test.sh` needs no PATH stub because the flag guard
+fires before any probe; `mini_bin_dir_test.sh` fixes PATH to `/usr/bin:/bin` and
+stubs opencode as a shell function; `ollama_systemd_failure_test.sh` neutralises
+systemctl and sudo with shell functions. The suite needs no live model service,
+no credential and no network.
+
+Two of them earn their own note:
+
+- `tests/test_provider.sh` covers provider and launch selection — run it first
+  when you touch provider code.
+- `tests/webfetch.sh` covers the webfetch truncation/failure contract. When
+  changing capture or truncation, compare output byte for byte against the
+  fixture with zero, one, and multiple trailing newlines, below and at the cap.
+  Preserve newlines with a capture sentinel, keep converter failures non-zero,
+  and test Python character slicing with multibyte input under `LC_ALL=C`.
 
 `tests/remote_key_test.sh` pins one thing: the API-key prompt of `mini remote`.
 With `MINI_YES=1` the prompt is skipped, nothing is read from stdin, and an
@@ -136,7 +170,6 @@ The remaining wrapper behavior is checked by hand:
 
 ```bash
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
-bash tests/webfetch.sh                               # webfetch truncation + failure contract (PATH-stubbed, no network)
 shellcheck -x --source-path=lib --source-path=platforms \
   -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh  # if available
 mini doctor                                           # must be clean
@@ -146,12 +179,29 @@ mini model qwen2.5-coder:3b && mini "check disk"      # a second model
 
 Test on a box with no GPU and on one with a GPU — the selection paths differ.
 
-CI runs the same two commands (`.github/workflows/shell-checks.yml`). `-x` makes
-ShellCheck follow the files `bin/mini` sources at runtime, `--source-path` says
-where they live — so a moved or renamed lib file fails the build instead of
-quietly dropping out of the check. `SC2015` and `SC2016` are off because both
-are house idioms: `a && b || c` one-liners, and single-quoted text carrying
-literal backticks. Every other code is enforced, warnings and errors included.
+## CI
+
+CI runs the whole suite as well as the syntax and lint checks
+(`.github/workflows/shell-checks.yml`).
+
+- The `shell-checks` job runs the two lint commands above, unchanged: the
+  `bash -n` loop over `bin/mini lib/*.sh platforms/*.sh install.sh`, and
+  ShellCheck with `-x --source-path=lib --source-path=platforms -e SC2015
+  -e SC2016`. `-x` makes ShellCheck follow the files `bin/mini` sources at
+  runtime, `--source-path` says where they live — so a moved or renamed lib
+  file fails the build instead of quietly dropping out of the check. `SC2015`
+  and `SC2016` are off because both are house idioms: `a && b || c`
+  one-liners, and single-quoted text carrying literal backticks. Every other
+  code is enforced, warnings and errors included.
+- The `tests` job runs `bash .github/run-tests.sh`. Its job id is `tests` and
+  it carries no `name:` override — the id is the check name that branch
+  protection matches on. A member exiting nonzero fails the job; no step sets
+  `continue-on-error`. The job installs no ollama/opencode, references no
+  secret, and needs no network.
+
+Both job ids — `shell-checks` and `tests` — are listed in
+`.dz/maintainer/maintainer.yml` under `pr.required_checks`, so a red test job
+blocks auto-merge instead of being ignored.
 
 ## Docs
 
