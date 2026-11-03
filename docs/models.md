@@ -73,8 +73,9 @@ ollama show <model> | grep 'context length'
 
 and put that number in the registry. An inflated value there only makes mini
 report a context it does not have. If you genuinely need more than 32k, that
-means a long-context model — `devstral:24b` or `gpt-oss:20b` at 128k — which in
-practice means a GPU.
+means a long-context model — `devstral:24b`, `gpt-oss:20b`, `llama3.2:3b` or
+`llama3.2:1b` at 128k, `qwen3-coder:30b` and `qwen3:4b-instruct` at 256k. The
+big ones in practice mean a GPU.
 
 ## What actually matters in a model here
 
@@ -103,6 +104,21 @@ PARAMETER num_ctx 32768
 registered as `mini-qwen2.5-coder-7b:32k` — the context is the smaller of what
 your memory allows and what the model natively supports.
 
+`qwen2.5-coder:7b` is a good illustration of that second half. Its native
+context is 32768, so no budget can lift it above 32k:
+
+| Budget | Ladder wants | Built variant |
+|---|---|---|
+| ≥20000 MB | 131072 | `mini-qwen2.5-coder-7b:32k` (capped at 32768) |
+| ≥12000 MB | 65536 | `mini-qwen2.5-coder-7b:32k` (capped at 32768) |
+| ≥6000 MB | 32768 | `mini-qwen2.5-coder-7b:32k` |
+| ≥3000 MB | 16384 | `mini-qwen2.5-coder-7b:16k` |
+| below | 8192 | `mini-qwen2.5-coder-7b:8k` |
+
+It can never be a 64k or 128k variant. For a longer window, pick a model whose
+architecture actually has one — `devstral:24b`, `gpt-oss:20b`, `llama3.2:3b` or
+`llama3.2:1b` at 128k, `qwen3-coder:30b` and `qwen3:4b-instruct` at 256k.
+
 **Why this is not optional.** Ollama's default context is 4096 tokens. opencode's
 system prompt and tool definitions nearly fill that before you type anything. The
 result is not an error — it is an agent that truncates tool calls and appears to
@@ -113,10 +129,14 @@ Context is chosen from the budget, then capped at what the model supports:
 
 | Budget | Context |
 |---|---|
-| ≥12GB | 65536 |
-| ≥6GB | 32768 |
-| ≥3GB | 16384 |
+| ≥20000 MB | 131072 |
+| ≥12000 MB | 65536 |
+| ≥6000 MB | 32768 |
+| ≥3000 MB | 16384 |
 | below | 8192 |
+
+The budget is in megabytes because that is what `lib/detect.sh` produces;
+`≥20000 MB` is a 20GB-class box.
 
 KV cache is not free — 64k on a 3GB box would swap and be slower than a smaller
 window. `mini doctor` warns when your context lands below 64k so you know the
@@ -125,6 +145,11 @@ three causes applies: the context is the model's native ceiling, this box's
 memory cannot hold the model's full native window, or the model is not in the
 registry so its native context is unknown — the context is then chosen from the
 budget and capped at mini's 32768 fallback.
+
+That 32768 fallback is **only** the default native ceiling for a model that is
+not in the registry. It is not a cap on the context mini selects: a registry
+model with 262144 or 131072 native context still gets 131072 on a box with a
+20000 MB budget.
 
 No `SYSTEM` line is baked into the variant. opencode sends its own system
 prompt, which shadows it anyway; the brain belongs in `AGENTS.md` where you can
@@ -155,10 +180,13 @@ mini model hf.co/unsloth/Qwen3-4B-Instruct-GGUF:Q4_K_M    # straight from Huggin
 mini warns that it is unknown, then tries anyway: pulls it, picks a context from
 your budget, builds the variant. The registry is a curated shortlist, not a
 whitelist — anything `ollama pull` accepts works, including any GGUF on
-HuggingFace via the `hf.co/<user>/<repo>:<quant>` form. In `mini doctor`, the
-context warning for such a model reports the context as chosen from the budget
-and capped at mini's 32768 fallback, pointing
-at `ollama show <model> | grep 'context length'` for the real ceiling.
+HuggingFace via the `hf.co/<user>/<repo>:<quant>` form.
+
+An unknown model has no registry row, so mini assumes a native context of
+32768 — that default is the *ceiling* for such a model, and it is the only case
+it applies in. In `mini doctor`, the context warning for such a model reports
+the context as chosen from the budget and capped at mini's 32768 fallback,
+pointing at `ollama show <model> | grep 'context length'` for the real ceiling.
 
 Before committing to one, check the two things that decide whether it can be an
 agent at all:
