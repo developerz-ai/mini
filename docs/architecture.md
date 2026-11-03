@@ -89,11 +89,14 @@ both absent, a card found via `lspci` is named in the report but counts as zero
 — a driver-less GPU cannot run anything.
 
 For auto-selection, `lib/models.sh` walks `share/models.tsv` best → smallest and
-takes the first row that fits. On CPU it skips registry rows before the
-`qwen3:4b-instruct` cap, then takes the first row that fits starting at that cap
-row: a 7B model generates about 2.5 tokens a second on CPU, which is not an
-interactive agent. GPU selection is uncapped and takes the first fitting row
-from the full registry. `mini model <id>` overrides this auto-selection.
+takes the first row that fits. On CPU it skips every registry row before the
+`qwen3:4b-instruct` cap row and then starts judging from that cap row: a 7B
+model generates about 2.5 tokens a second on CPU, which is not an interactive
+agent. The cap row itself is eligible — `qwen3:4b-instruct` is picked whenever
+the budget is at least its 4000 MB. Below that the walk continues down the
+registry and lands on `llama3.2:3b` (3000 MB) or `llama3.2:1b` (2000 MB).
+GPU selection is uncapped and takes the first fitting row from the full
+registry. `mini model <id>` overrides this auto-selection.
 
 ## The context variant
 
@@ -107,12 +110,41 @@ So mini never runs a base model. It builds a derived one:
 
 ```
 FROM qwen2.5-coder:7b
-PARAMETER num_ctx 65536
+PARAMETER num_ctx 32768
 ```
 
-registered as `mini-qwen2.5-coder-7b:64k`. The context is chosen from the memory
-budget (64k / 32k / 16k / 8k, capped at what the model supports) because KV
-cache is not free — 64k on a 3GB box would swap.
+registered as `mini-qwen2.5-coder-7b:32k`. The context is chosen from the memory
+budget, then capped at the model's native context.
+
+`models_pick_ctx` picks the window from the budget in MB:
+
+| Budget | Context |
+|---|---|
+| ≥20000 MB | 131072 (128k) |
+| ≥12000 MB | 65536 (64k) |
+| ≥6000 MB | 32768 (32k) |
+| ≥3000 MB | 16384 (16k) |
+| below 3000 MB | 8192 (8k) |
+
+The result is then capped at the model's **native** context — the `max_ctx`
+column of `share/models.tsv`. `qwen2.5-coder:7b` is a 32k architecture, so on
+any budget the walk above gives it at most 32768: at 20000 MB the ladder asks
+for 128k and the native ceiling cuts it back to 32768, and the same 32768 comes
+out at 12000 MB and at 6000 MB. Below that it drops to 16384 at 3000 MB and
+8192 under it. `qwen2.5-coder:7b` can therefore never yield a 64k or 128k
+variant — asking for more than the architecture supports produces nothing,
+because ollama honours the architecture limit.
+
+A 128k window is reachable, but only on a model whose native context is at least
+that wide: `devstral:24b`, `gpt-oss:20b`, `llama3.2:3b` and `llama3.2:1b`
+(128k each), `qwen3-coder:30b` and `qwen3:4b-instruct` (256k). KV cache is not
+free — 64k on a 3GB box would swap — which is why the ladder scales with the
+budget.
+
+One number in `models_pick_ctx` deserves care: `32768` is the **fallback
+native context for a model that is not in the registry**, not a blanket cap on
+the selected window. A registry model with a 256k or 128k native context still
+gets 131072 at a 20000 MB budget.
 
 No `SYSTEM` line is baked in. opencode sends its own system prompt, which would
 shadow it; the brain belongs in `AGENTS.md` where it can be read and edited.
