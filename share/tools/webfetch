@@ -66,10 +66,14 @@ body=${body%.}
 [ -n "$body" ] || { printf 'webfetch: empty response from %s\n' "$URL" >&2; exit 1; }
 
 if [ "$RAW" -eq 1 ]; then
-  # head closes the pipe once it has the cap and SIGPIPEs the writer; fed from
+  # head closes the pipe once it has the cap and kills the writer; fed from
   # a process substitution that death is never a checked status, so an
-  # oversized raw fetch still exits 0.
-  head -c "$MAX_CHARS" < <(printf '%s' "$body")
+  # oversized raw fetch still exits 0. The writer's stderr is silenced too:
+  # when SIGPIPE is ignored up the process tree (a supervisor that ignores it
+  # passes that to every child, and bash never resets an inherited ignore),
+  # the write fails with EPIPE and bash reports "write error: Broken pipe"
+  # here — noise on stderr for a fetch that succeeded.
+  head -c "$MAX_CHARS" < <(printf '%s' "$body" 2>/dev/null)
   exit 0
 fi
 
