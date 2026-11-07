@@ -95,4 +95,4 @@ jobs:
       # other code is enforced, warnings and errors included.
       - name: Run ShellCheck
         shell: bash
-        run: shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh
+        run: shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh install.sh

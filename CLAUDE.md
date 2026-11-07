@@ -171,7 +171,7 @@ The remaining wrapper behavior is checked by hand:
 ```bash
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
 shellcheck -x --source-path=lib --source-path=platforms \
-  -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh  # if available
+  -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh install.sh  # if available
 mini doctor                                           # must be clean
 mini "what is wrong with this machine"                # end to end
 mini model qwen2.5-coder:3b && mini "check disk"      # a second model
