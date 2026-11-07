@@ -33,7 +33,6 @@ pr:
   # repo's protection and `.github/workflows/` when either changes; this list is not the ruleset.
   required_checks:
     - "shell-checks"
-    - "tests"
   auto_merge: true
   # An outside contributor's pull request and a member's wait for a member.
   auto_merge_scope: own_and_dependency_bots

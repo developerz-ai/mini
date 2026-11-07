@@ -100,7 +100,7 @@ An agent owns *its own files*; whole-repo green is the coordinator's job and nob
 
    **Main moves under you.** `git fetch` and intersect *files changed on main* with *files changed locally*; a real overlap is **three-way merged** (`git merge-file -p ours base theirs`), never taken wholesale — a naive build drops main's lines silently, with no conflict marker.
 
-   Then `gh pr create` and `gh pr merge --squash`. CI runs the offline suite plus the syntax and lint checks, so there *is* something to wait for: the `tests` job runs `bash .github/run-tests.sh` and the `shell-checks` job runs `bash -n` and ShellCheck. Both job ids are in `pr.required_checks`, so a red test blocks the merge — step 7 is your own gate, CI is the second one. Never merge around a red check, and never treat a skipped script as a failure: the runner decides by exit code alone.
+   Then `gh pr create` and `gh pr merge --squash`. CI runs the offline suite plus the syntax and lint checks, so there *is* something to wait for: the `shell-checks` job runs `bash -n`, the offline suite (`bash .github/run-tests.sh`) and ShellCheck. That job id is in `pr.required_checks`, so a red test blocks the merge — step 7 is your own gate, CI is the second one. Never merge around a red check, and never treat a skipped script as a failure: the runner decides by exit code alone.
 
 9. **Leave the trail straight.** Update the `README.md` / `docs/` page your change invalidated **in the same PR** — a stale doc about a wrapper this small is worse than none. When a defect could recur and a check can catch it, add it to `lib/doctor.sh` in the same PR, with the exact fixing command (a check with no fix is not a check).
 

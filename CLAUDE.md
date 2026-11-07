@@ -193,14 +193,14 @@ CI runs the whole suite as well as the syntax and lint checks
   and `SC2016` are off because both are house idioms: `a && b || c`
   one-liners, and single-quoted text carrying literal backticks. Every other
   code is enforced, warnings and errors included.
-- The `tests` job runs `bash .github/run-tests.sh`. Its job id is `tests` and
-  it carries no `name:` override — the id is the check name that branch
-  protection matches on. A member exiting nonzero fails the job; no step sets
-  `continue-on-error`. The job installs no ollama/opencode, references no
+- The same `shell-checks` job then runs the offline suite, `bash
+  .github/run-tests.sh`, in the step after the `bash -n` loop (there is no
+  separate `tests` job). A member exiting nonzero fails the job; no step sets
+  `continue-on-error`. The step installs no ollama/opencode, references no
   secret, and needs no network.
 
-Both job ids — `shell-checks` and `tests` — are listed in
-`.dz/maintainer/maintainer.yml` under `pr.required_checks`, so a red test job
+`shell-checks` is the one check name, and it is listed in
+`.dz/maintainer/maintainer.yml` under `pr.required_checks`, so a red test run
 blocks auto-merge instead of being ignored.
 
 ## Docs
