@@ -73,7 +73,7 @@ info "installing to ${MINI_PREFIX}"
 mkdir -p "$MINI_PREFIX" "$MINI_BIN_DIR"
 
 # Replace the program files; ~/.cache/mini (your state) is never touched.
-rm -rf "${MINI_PREFIX}/bin" "${MINI_PREFIX}/lib" "${MINI_PREFIX}/share" "${MINI_PREFIX}/platforms"
+rm -rf "${MINI_PREFIX:?}/bin" "${MINI_PREFIX:?}/lib" "${MINI_PREFIX:?}/share" "${MINI_PREFIX:?}/platforms"
 cp -R "${src_dir}/bin" "${src_dir}/lib" "${src_dir}/share" "${src_dir}/platforms" "$MINI_PREFIX/"
 [ -f "${src_dir}/README.md" ] && cp "${src_dir}/README.md" "$MINI_PREFIX/" || true
 chmod +x "${MINI_PREFIX}/bin/mini" "${MINI_PREFIX}/share/tools/"* 2>/dev/null || true

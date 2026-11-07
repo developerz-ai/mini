@@ -138,7 +138,7 @@ The remaining wrapper behavior is checked by hand:
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
 bash tests/webfetch.sh                               # webfetch truncation + failure contract (PATH-stubbed, no network)
 shellcheck -x --source-path=lib --source-path=platforms \
-  -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh  # if available
+  -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh install.sh  # if available
 mini doctor                                           # must be clean
 mini "what is wrong with this machine"                # end to end
 mini model qwen2.5-coder:3b && mini "check disk"      # a second model
