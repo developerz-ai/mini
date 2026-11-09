@@ -451,5 +451,42 @@ assert_eq 'two writes: the temp file sits beside the destination' 'same dir' \
      && printf 'same dir' || printf 'elsewhere')"
 assert_true 'two writes: the live config is still valid JSON' json_ok "$CFG"
 
+# --- 9: schema contract — opencode v1 keys only -----------------------------
+
+# opencode v1.18.21 (config.ts + core/src/v1/config/provider.ts) declares model
+# tool support as "tool_call"; a model-level "tools" key is not in the schema and
+# is silently dropped. The top-level "tools" block and the provider block are
+# v1 syntax that v2 normalizes (opencode.ai/docs/migrate-v1/), and v2-native
+# keys would be ignored by v1. Asserted on freshly generated output of both
+# writers: the local config is regenerated here, the remote one is section 3's.
+
+run_case case_two_writes_two_temps   # leaves a fresh local config in $CFG
+assert_eq 'schema: regenerated local config' '0' "$RUN_RC"
+
+schema_checks() { # <label> <file> <provider id> <model id>
+  local label="$1" f="$2" prov="$3" mid="$4"
+  local m="d['provider']['$prov']['models']['$mid']"
+  local o="d['provider']['$prov']['options']"
+  assert_eq "schema $label: model tool_call is true" 'True' "$(json_get "$f" "$m.get('tool_call')")"
+  assert_eq "schema $label: no model-level tools key" 'False' "$(json_get "$f" "'tools' in $m")"
+  assert_eq "schema $label: provider npm" '@ai-sdk/openai-compatible' \
+    "$(json_get "$f" "d['provider']['$prov']['npm']")"
+  assert_eq "schema $label: options carry baseURL, timeout, chunkTimeout" 'True' \
+    "$(json_get "$f" "all(k in $o for k in ('baseURL', 'timeout', 'chunkTimeout'))")"
+  assert_eq "schema $label: model limit kept" 'True' \
+    "$(json_get "$f" "all(k in $m['limit'] for k in ('context', 'output'))")"
+  assert_eq "schema $label: top-level tools disable the built-ins" \
+    'task todowrite todoread glob grep list patch webfetch' \
+    "$(json_get "$f" "' '.join(k for k, v in d['tools'].items() if v is False)")"
+  assert_eq "schema $label: no tool left enabled at top level" 'False' \
+    "$(json_get "$f" "any(v is not False for v in d['tools'].values())")"
+  assert_eq "schema $label: no v2-only top-level keys" '' \
+    "$(json_get "$f" "' '.join(k for k in ('providers', 'permissions', 'agents', 'commands') if k in d)")"
+  assert_eq "schema $label: v1 autoupdate/share kept" 'False disabled' \
+    "$(json_get "$f" "str(d['autoupdate']) + ' ' + d['share']")"
+}
+schema_checks local "$CFG" ollama 'mini-test:3b'
+schema_checks remote "$RCFG" mini-remote 'remote-model:2b'
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
