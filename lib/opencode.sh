@@ -216,6 +216,14 @@ opencode_install_config() {
 # $3/$4 serve the run-only --model override: it writes a run-scoped config
 # of that launch's own while carrying user commands from — and never
 # touching — the live config.
+#
+# Schema reference: opencode v1.18.21 config.ts + core/src/v1/config/provider.ts
+# (opencode.ai/docs/migrate-v1/). A model declares tool support with
+# "tool_call": true — a model-level "tools" key is not in the schema and is
+# silently dropped. The v1 keys below (provider npm/options, top-level tools,
+# autoupdate, share) are normalized by v2; never emit v2-native keys here
+# (providers, permissions, agents, commands): v1 would ignore them.
+#
 # Note the "tools" block — it is a latency setting, not a preference.
 #
 # Every enabled tool ships its JSON schema in the prompt on EVERY request.
@@ -289,7 +297,7 @@ opencode_write_config() {
       "models": {
         "${model}": {
           "name": "$(json_escape "$label")",
-          "tools": true,
+          "tool_call": true,
           "limit": { "context": ${ctx}, "output": ${out_tokens} }
         }
       }
@@ -561,7 +569,7 @@ opencode_write_remote_config() {
       "models": {
         "$(json_escape "$model")": {
           "name": "$(json_escape "mini · ${model}")",
-          "tools": true,
+          "tool_call": true,
           "limit": { "context": ${ctx}, "output": ${out_tokens} }
         }
       }
