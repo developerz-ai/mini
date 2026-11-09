@@ -27,15 +27,47 @@ ollama_is_loopback() {
   esac
 }
 
-# Is anything answering on the ollama port from outside this machine?
-# Returns the offending bind address, or nothing.
-ollama_public_bind() {
+# Every address the ollama port is bound to, exactly as ss reports it:
+# "127.0.0.1:11434", "0.0.0.0:11434", "[::]:11434", "192.168.1.10:11434".
+# One address per line.
+#
+# Returns non-zero when the listener could not be inspected at all — no ss
+# on PATH — so a caller can tell "the listener is on loopback" from "nobody
+# looked". A missing ss must never read as a healthy bind.
+ollama_listen_binds() {
   local port="${OLLAMA_HOST_ADDR##*:}"
   [ -n "$port" ] || port=11434
-  has ss || return 0
+  has ss || return 1
   ss -tlnH 2>/dev/null \
-    | awk -v p=":${port}" '$4 ~ p"$" {print $4}' \
-    | grep -E '^(0\.0\.0\.0|\*|\[::\])' || true
+    | awk -v p=":${port}" '$4 ~ p"$" {print $4}'
+}
+
+# Is this bind address a loopback one? 127.0.0.0/8 and ::1 are.
+ollama_addr_is_loopback() {
+  local host="$1"
+  case "$host" in
+    \[*\]*) host="${host#\[}"; host="${host%%\]*}" ;;   # [::1]:11434 -> ::1
+    *)      host="${host%:*}" ;;                        # 127.0.0.1:11434 -> 127.0.0.1
+  esac
+  case "$host" in
+    127.*|::1|localhost) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Is anything answering on the ollama port from outside this machine?
+# Returns the offending bind address, or nothing.
+#
+# Every non-loopback bind counts. 0.0.0.0 and [::] are wildcards, and a
+# routable address (192.168.1.10:11434) is just as reachable from the
+# network — matching the wildcards alone hid that one.
+ollama_public_bind() {
+  local addr
+  while IFS= read -r addr; do
+    [ -n "$addr" ] || continue
+    ollama_addr_is_loopback "$addr" || printf '%s\n' "$addr"
+  done < <(ollama_listen_binds)
+  return 0
 }
 
 # Is the server the one systemd owns?

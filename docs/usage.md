@@ -158,7 +158,12 @@ the machine — unauthenticated, it would be a remote shell for anyone who can
 reach the port.
 
 ollama itself is pinned to `127.0.0.1:11434` and never exposed. `mini doctor`
-fails loudly if it finds it bound to `0.0.0.0`; `mini serve --local` fixes it.
+reads the live listener rather than the configured host: any bind that is not
+loopback — `0.0.0.0`, `::`, or a routable address such as `192.168.1.10` — is
+a failure, and `mini serve --local` fixes it. "bound to loopback only" is
+reported only after the listener has actually been inspected; on a box without
+`ss` the bind cannot be checked, so doctor calls it unverified and prints the
+command that installs `ss`.
 
 ## Memory
 

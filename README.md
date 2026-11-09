@@ -247,8 +247,11 @@ Two things could listen, and mini locks down both:
 
 - **ollama** is pinned to `127.0.0.1:11434`. An ollama on a public interface has
   no authentication of any kind — anyone who finds it can run inference on your
-  hardware. `mini doctor` fails loudly if it sees a `0.0.0.0` bind, and
-  `mini serve --local` puts it back.
+  hardware. `mini doctor` reads the live listener and fails on any bind that
+  is not loopback — `0.0.0.0`, `::`, or a routable address such as
+  `192.168.1.10`. `mini serve --local` puts it back. "loopback only" is
+  claimed only after the listener has actually been inspected; without `ss`
+  doctor reports the bind as unverified.
 - **opencode's server** (`mini web`, `mini headless`) binds to loopback and gets
   a 32-character password generated on first use, stored `0600` in
   `~/.cache/mini/secret`. `--lan` opens it to your network; the password is what

@@ -326,6 +326,9 @@ CFG
     ollama_up() { return 0; }
     ollama_version() { printf '0.0.0\n'; }
     ollama_public_bind() { return 0; }
+    # The listener helper too: the doctor run must never reach the host's
+    # real ss. A loopback bind is what a healthy host has.
+    ollama_listen_binds() { printf '127.0.0.1:11434\n'; }
     ollama_is_loopback() { return 0; }
     ollama_has_model() { return 0; }
     models_recommend() { printf 'stub-model:1b\n'; }

@@ -246,13 +246,38 @@ doctor_run() {
 
   # An ollama on a public interface has no authentication of any kind. Anyone
   # who can reach it can load models and run inference on your hardware.
-  local public_bind
-  public_bind=$(ollama_public_bind)
-  if [ -n "$public_bind" ]; then
-    d_fail "ollama is listening on ${public_bind} — reachable from the network, with no auth"
+  #
+  # The verdict comes from the observed listener, not from OLLAMA_HOST: a
+  # server bound to a routable address (192.168.1.10:11434) is as reachable as
+  # one on 0.0.0.0, and the configured host says nothing about what is really
+  # listening. And when the listener cannot be inspected at all, doctor says
+  # so instead of claiming a bind it never saw.
+  #
+  # One snapshot, one verdict: the listener table is read exactly once, and
+  # both the public list and the loopback-only line come out of that read.
+  # Two reads would be two moments in time — the server can rebind between
+  # them, and doctor would call a routable bind safe because the first read
+  # happened to come back empty.
+  local binds='' addrs='' addr inspected=0
+  if binds=$(ollama_listen_binds); then inspected=1; fi
+  if [ "$inspected" -eq 1 ]; then
+    while IFS= read -r addr; do
+      [ -n "$addr" ] || continue
+      if ! ollama_addr_is_loopback "$addr"; then
+        if [ -z "$addrs" ]; then addrs="$addr"; else addrs="${addrs}, ${addr}"; fi
+      fi
+    done <<< "$binds"
+  fi
+  if [ -n "$addrs" ]; then
+    d_fail "ollama is listening on ${addrs} — reachable from the network, with no auth"
     d_fix "mini serve --local   (or set OLLAMA_HOST=127.0.0.1:11434 in the unit and restart)"
-  elif ollama_up && ollama_is_loopback; then
+  elif [ "$inspected" -eq 1 ] && [ -n "$binds" ]; then
+    # The listener was inspected, and every bind on the ollama port is loopback.
     d_ok "bound to loopback only ${C_DIM}(not reachable from the network)${C_RESET}"
+  elif [ "$inspected" -eq 0 ]; then
+    # Nothing was inspected, so nothing may be claimed about the bind.
+    d_warn "could not inspect the ollama listener — the bind is unverified"
+    d_fix "$(platform_install_cmd_for ss)"
   fi
 
   step "Model"
