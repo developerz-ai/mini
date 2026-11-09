@@ -322,6 +322,38 @@ lacks "a shifting listener table reports no bind it never read" \
 shift_reads="$(cat "${SHIFTING}/count" 2>/dev/null || echo 0)"
 expect "the listener table is read once" "1" "$shift_reads"
 
+# --------------------------------------------------- ollama_public_bind ----
+
+# ollama_bind_local's "still listening" warning calls ollama_public_bind
+# directly -- doctor's own bind check above goes through ollama_listen_binds
+# and ollama_addr_is_loopback instead, and init_test stubs ollama_public_bind
+# out entirely. Nothing else would catch a regression where this function
+# goes back to matching only wildcard addresses (0.0.0.0, [::]) and misses a
+# routable one (192.168.1.10:11434), so exercise it on its own here.
+
+printf 'ollama_public_bind: routable, loopback, and wildcard binds\n'
+
+public_bind_case() { # <path> -> ollama_public_bind's stdout
+  local path="$1"
+  (
+    export MINI_HOME="${TMP}/home-public-bind"
+    export PATH="$path"
+    export OLLAMA_HOST_ADDR='127.0.0.1:11434'
+    # shellcheck disable=SC1091
+    . "${REPO_ROOT}/lib/common.sh"
+    # shellcheck disable=SC1091
+    . "${REPO_ROOT}/lib/ollama.sh"
+    ollama_public_bind
+  )
+}
+
+contains "a routable bind is reported by ollama_public_bind" \
+  "192.168.1.10:11434" "$(public_bind_case "${ROUTABLE}:${PATH}")"
+contains "a wildcard bind is reported by ollama_public_bind" \
+  "0.0.0.0:11434" "$(public_bind_case "${WILDCARD}:${PATH}")"
+expect "a loopback bind reports nothing public" \
+  "" "$(public_bind_case "${LOOPBACK}:${PATH}")"
+
 # ------------------------------------------------------------- summary ----
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
