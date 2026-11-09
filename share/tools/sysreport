@@ -12,11 +12,6 @@ FULL=0
 [ "${1:-}" = '-f' ] || [ "${1:-}" = '--full' ] && FULL=1
 
 sec() { printf '\n## %s\n' "$1"; }
-run() {
-  local label="$1"; shift
-  printf '\n$ %s\n' "$label"
-  "$@" 2>&1 | head -n "${LINES_LIMIT:-25}"
-}
 
 printf '# sysreport — %s — %s\n' "$(hostname)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
 
