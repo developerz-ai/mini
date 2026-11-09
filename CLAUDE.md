@@ -118,7 +118,7 @@ bash .github/run-tests.sh    # the whole offline suite
 
 The runner is `.github/run-tests.sh`, invoked as `bash .github/run-tests.sh`
 from the repo root. With no arguments its default member list is every
-`tests/*.sh` in the repo — all nine today:
+`tests/*.sh` in the repo — all ten today:
 
 | Script | What it pins |
 |---|---|
@@ -126,6 +126,7 @@ from the repo root. With no arguments its default member list is every
 | `init_test.sh` | init-system detection + doctor's Init step |
 | `mini_bin_dir_test.sh` | the PATH the agent inherits, and the `/remember` command |
 | `model_flag_test.sh` | the missing-argument refusal of `mini --model` |
+| `ollama_bind_test.sh` | doctor's ollama bind verdict, read from the observed listener |
 | `ollama_systemd_failure_test.sh` | systemd rebind and stop refusals — a failure is reported, not swallowed |
 | `opencode_config_test.sh` | the `opencode.json` regeneration contract (skips without python3) |
 | `remote_key_test.sh` | the API-key prompt of `mini remote` |
