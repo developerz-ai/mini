@@ -192,10 +192,18 @@ CI runs the whole suite as well as the syntax and lint checks
   file fails the build instead of quietly dropping out of the check. `SC2015`
   and `SC2016` are off because both are house idioms: `a && b || c`
   one-liners, and single-quoted text carrying literal backticks. Every other
-  code is enforced, warnings and errors included.
-- The same `shell-checks` job then runs the offline suite, `bash
-  .github/run-tests.sh`, in the step after the `bash -n` loop (there is no
-  separate `tests` job). A member exiting nonzero fails the job; no step sets
+  code is enforced, warnings and errors included. CI installs ShellCheck
+  itself when the runner lacks it.
+- The offline suite rides in the SAME step as the `bash -n` loop — the step
+  named `Check Bash syntax and run the offline test suite` — because that
+  workflow must not grow a second job or a second `run:` step. That one step
+  body runs, in order: the `bash -n` loop, `bash .github/run-tests.sh`, a
+  probe that drives the runner with a deliberately failing member to prove
+  the runner can fail, and `bash .github/run-tests_test.sh`, the runner's own
+  verdict-contract self-test. Keep the suite in that step body; do not split
+  it into a step or a job of its own.
+- A member exiting nonzero aborts the step — GitHub's `bash` shell runs with
+  `-e` — so a red suite is a red `shell-checks` job. No step sets
   `continue-on-error`. The step installs no ollama/opencode, references no
   secret, and needs no network.
 
