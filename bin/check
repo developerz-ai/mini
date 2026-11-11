@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# one-command check (typecheck + lint + test) — established by dz-runner setup mode. One command; adjust as the repo grows.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+for f in bin/mini lib/*.sh platforms/*.sh install.sh; do bash -n "$f" || exit 1; done && bash .github/run-tests.sh && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh install.sh
