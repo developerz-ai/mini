@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# pre-commit gate — established by dz-runner setup mode. Runs the SAME
-# `bin/check` CI runs, so a commit that would fail CI fails here first.
+# pre-commit gate — established by dz-runner setup mode. Runs `bin/check`;
+# CI runs the same commands, so a commit that would fail CI fails here first.
 # ACTIVATE IT (once, per clone): git config core.hooksPath .githooks
 set -euo pipefail
 cd "$(dirname "$0")/.."

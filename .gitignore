@@ -8,3 +8,6 @@
 # (staged CI logs, run artifacts, run provenance). Written BY the agent FOR the
 # agent, cleared and rewritten on every run; never repo content.
 tmp/dz/
+
+# local secrets — .env.example says to copy it to .env and fill it in; never commit it
+.env

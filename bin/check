@@ -1,5 +1,35 @@
 #!/usr/bin/env bash
 # one-command check (typecheck + lint + test) — established by dz-runner setup mode. One command; adjust as the repo grows.
+#
+# Exit codes (.claude/skills/verify-change/SKILL.md):
+#   0                full gate passed — commit
+#   75               a resource the gate NEEDS is unreachable — refused to grade; blame the environment
+#   79               scoped run (bin/check <files…>) passed — commit and open the PR; CI grades the rest
+#   other non-zero   the gate ran and the change is red
 set -euo pipefail
 cd "$(dirname "$0")/.."
-for f in bin/mini lib/*.sh platforms/*.sh install.sh; do bash -n "$f" || exit 1; done && bash .github/run-tests.sh && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh install.sh
+
+SHELL_FILES=(bin/mini bin/setup bin/dev bin/check bin/stop .githooks/pre-commit lib/*.sh platforms/*.sh install.sh)
+
+# Precondition FIRST: without shellcheck the gate cannot grade lint, and a
+# plain exit 1 would tell the platform the change is red when it is the box
+# that is. Refuse to grade instead.
+if ! command -v shellcheck >/dev/null 2>&1; then
+  echo "bin/check: shellcheck not found — the gate cannot grade lint. Fix: bin/setup" >&2
+  exit 75
+fi
+
+if [ "$#" -gt 0 ]; then
+  # Scoped run: grade only the named files. Any failure above is a red
+  # (exit 1); reaching the end means every check that ran passed, but the
+  # suite was skipped, so the change is not fully graded here — exit 79 and
+  # let CI grade the rest.
+  for f in "$@"; do bash -n "$f" || exit 1; done
+  shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 "$@"
+  exit 79
+fi
+
+for f in "${SHELL_FILES[@]}"; do bash -n "$f" || exit 1; done
+bash .github/run-tests.sh
+bash .github/run-tests_test.sh
+shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 "${SHELL_FILES[@]}"

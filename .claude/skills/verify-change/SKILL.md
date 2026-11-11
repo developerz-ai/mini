@@ -9,14 +9,15 @@ description: Prove a change in developerz-ai/mini before committing or opening a
 
 ## The one gate
 
-`bin/check` is the gate. CI runs it and the pre-commit hook runs it, so a change that
-passes it locally passes everywhere.
+`bin/check` is the gate. CI runs the same commands, and the pre-commit hook runs it
+once activated (`git config core.hooksPath .githooks`), so a change that passes it
+locally passes everywhere.
 
 | Step | Command | What it is |
 |------|---------|------------|
 | install | `bin/setup` | (dpkg -s shellcheck curl ca-certificates procps python3 iproute2 >/dev/null 2>&1 \|\| (sudo -n apt-get update && sudo -n apt-get install -y --no-install-recommends shellcheck curl ca-certificates procps python3 iproute2)) |
 | run | `bin/dev` | bin/mini models — on developerz.ai runs, start it with code_bash_background when you need a running stack |
-| prove | `bin/check` | for f in bin/mini lib/*.sh platforms/*.sh install.sh; do bash -n "$f" \|\| exit 1; done && bash .github/run-tests.sh && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh install.sh |
+| prove | `bin/check` | guards shellcheck first (exit 75 when missing), then for f in bin/mini bin/setup bin/dev bin/check bin/stop .githooks/pre-commit lib/*.sh platforms/*.sh install.sh; do bash -n "$f" \|\| exit 1; done && bash .github/run-tests.sh && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 over the same list — `bin/check <files…>` scopes to the named files and exits 79 |
 | stop | `bin/stop` | bin/mini stop \|\| true — on developerz.ai runs, the platform runs this when your session ends — do not stop the stack yourself |
 
 ## Rules
@@ -40,6 +41,7 @@ red. Exit 1 cannot carry that difference, so two codes are reserved:
 - Guard preconditions FIRST and `exit 75` when one is unmet. `exit 1` there tells the
   platform your change is broken when it is your environment that is.
 - `exit 79` only when every check you ran passed. Anything failed is `exit 1`;
-  a deferral never hides a red.
+  a deferral never hides a red. `bin/check <files…>` is the scoped form: it
+  syntax-checks and lints only the named files and exits 79 when they pass.
 - Changed a dependency? Re-run `bin/setup` before `bin/check`, or you are proving a stale tree.
 - Add the test that fails first, then the fix — a green run that never went red proves nothing.
