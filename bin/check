@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # one-command check (typecheck + lint + test) — established by dz-runner setup mode. One command; adjust as the repo grows.
+# The full gate mirrors .github/workflows/shell-checks.yml step for step: bash -n,
+# the suite, the runner-can-fail probe, the runner's verdict self-test, ShellCheck.
 #
 # Exit codes (.claude/skills/verify-change/SKILL.md):
 #   0                full gate passed — commit
@@ -31,5 +33,24 @@ fi
 
 for f in "${SHELL_FILES[@]}"; do bash -n "$f" || exit 1; done
 bash .github/run-tests.sh
+
+# Proves the runner can fail (as CI does): drive it with a deliberately failing
+# member; a zero exit means a broken runner. Subshell so the unset and the trap
+# stay local; GITHUB_STEP_SUMMARY is unset so the stub's FAIL line never lands
+# in the real summary.
+(
+  unset GITHUB_STEP_SUMMARY
+  stub_dir="$(mktemp -d)"
+  trap 'rm -rf "$stub_dir"' EXIT
+  printf '%s\n' '#!/usr/bin/env bash' 'echo "deliberate failure" >&2' 'exit 3' \
+    > "${stub_dir}/failing_test.sh"
+  chmod 0755 "${stub_dir}/failing_test.sh"
+  if bash .github/run-tests.sh "${stub_dir}/failing_test.sh"; then
+    echo "run-tests.sh exited 0 on a failing member" >&2
+    exit 1
+  fi
+  echo "run-tests.sh correctly exited nonzero on a failing member"
+)
+
 bash .github/run-tests_test.sh
 shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 "${SHELL_FILES[@]}"
