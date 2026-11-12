@@ -1,6 +1,59 @@
 #!/usr/bin/env bash
-# one-command setup — established by dz-runner setup mode. One command; adjust as the repo grows.
+# one-command setup — idempotent: installs only what `command -v` shows missing.
+# Needs: shellcheck (lint), curl, python3 (optional parsing), ss (iproute2), ps (procps).
+# Installer: apt-get directly as root, `sudo -n apt-get` otherwise. Where neither
+# works it names the missing tools and exits non-zero; with nothing missing it
+# never touches apt-get or sudo.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-command -v mise >/dev/null && mise install
-(dpkg -s shellcheck curl ca-certificates procps python3 iproute2 >/dev/null 2>&1 || (sudo -n apt-get update && sudo -n apt-get install -y --no-install-recommends shellcheck curl ca-certificates procps python3 iproute2))
+
+die() { printf 'bin/setup: %s\n' "$*" >&2; exit 1; }
+
+if command -v mise >/dev/null 2>&1; then
+  mise install
+fi
+
+missing=()
+pkgs=()
+# need <command> <package…> — record the command and its packages when absent.
+need() {
+  local tool="$1"; shift
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    missing+=("$tool")
+    pkgs+=("$@")
+  fi
+}
+need shellcheck shellcheck
+need curl curl ca-certificates
+need python3 python3
+need ss iproute2
+need ps procps
+
+if [ "${#missing[@]}" -eq 0 ]; then
+  echo "bin/setup: shellcheck curl python3 ss ps present — nothing to install"
+  exit 0
+fi
+
+if ! command -v apt-get >/dev/null 2>&1; then
+  die "missing: ${missing[*]} — no apt-get here; install them with your package manager (packages: ${pkgs[*]})"
+fi
+
+if [ "$(id -u)" -eq 0 ]; then
+  apt=(apt-get)
+elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+  apt=(sudo -n apt-get)
+else
+  die "missing: ${missing[*]} — not root and no passwordless sudo (sudo -n); run as root: apt-get update && apt-get install -y --no-install-recommends ${pkgs[*]}"
+fi
+
+if ! "${apt[@]}" update || ! "${apt[@]}" install -y --no-install-recommends "${pkgs[@]}"; then
+  die "installing ${pkgs[*]} failed (missing: ${missing[*]})"
+fi
+
+hash -r
+still=()
+for tool in "${missing[@]}"; do
+  command -v "$tool" >/dev/null 2>&1 || still+=("$tool")
+done
+[ "${#still[@]}" -eq 0 ] || die "still missing after install: ${still[*]}"
+echo "bin/setup: installed ${pkgs[*]}"
