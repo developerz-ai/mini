@@ -9,11 +9,39 @@ context window that works, and handing it a good system prompt and a few tools.
 When tempted to build something here, check first whether opencode already does
 it.
 
+**Stack:** bash + `curl`/coreutils/`awk`/`sed` · opencode (agent runtime) ·
+ollama (model server) · python3 optional (HTML parsing, always with a fallback) ·
+shellcheck for lint.
+
+## Commands
+
+| Command | What |
+|---|---|
+| `bin/setup` | One-command setup. Runs `mise install` if mise exists; installs `shellcheck curl ca-certificates procps python3 iproute2` via `sudo -n apt-get` when any is missing. |
+| `bin/dev` | One-command dev. Runs `bin/mini models`. |
+| `bin/check` | **The gate.** `bash -n` over every shell file, `bash .github/run-tests.sh`, `bash .github/run-tests_test.sh`, then ShellCheck. `bin/check <files…>` is a scoped run: `bash -n` + ShellCheck on those files only, suite skipped. |
+| `bin/stop` | One-command stop. Runs `bin/mini stop \|\| true`. |
+| `bash .github/run-tests.sh` | The whole offline suite, every `tests/*.sh`. |
+| `mini doctor` | Every runtime check, each prints its fix command. Must be clean. |
+
+`bin/check` exit codes:
+
+| Code | Meaning |
+|---|---|
+| `0` | Full gate passed — commit. |
+| `75` | A resource the gate needs is unreachable (no `shellcheck`) — refused to grade; blame the environment, fix with `bin/setup`. |
+| `79` | Scoped run (`bin/check <files…>`) passed — commit; CI grades the rest. |
+| other | The gate ran and the change is red. |
+
+`.githooks/pre-commit` execs `bin/check`. Activate once per clone:
+`git config core.hooksPath .githooks`.
+
 ## Layout
 
 | Path | What |
 |---|---|
-| `bin/mini` | CLI + dispatch. The only executable entry point. |
+| `bin/mini` | CLI + dispatch. The only entry point of the product. |
+| `bin/setup` `bin/dev` `bin/check` `bin/stop` | Dev-workflow scripts (see Commands), not part of the product. |
 | `lib/common.sh` | log/ask/config helpers. Sourced first, no dependencies. |
 | `lib/detect.sh` | OS + hardware → `OS_PLATFORM`, `BUDGET_MB`, `ACCEL` |
 | `lib/models.sh` | Registry, hardware fit, the `num_ctx` variant build |
@@ -27,7 +55,11 @@ it.
 | `share/opencode-tools/*.ts` | TS definitions that expose those to opencode |
 | `share/models.tsv` | The model registry. Dated. |
 | `install.sh` | curl-to-bash entry point |
-| `tests/` | Offline bash checks. No framework — run them by hand. |
+| `tests/` | Offline bash checks. No framework. |
+| `.github/run-tests.sh` | The suite runner (lives outside `tests/` on purpose). `run-tests_test.sh` is its verdict self-test. |
+| `.github/workflows/shell-checks.yml` | CI: the single `shell-checks` job. |
+| `.githooks/` | `pre-commit` → `bin/check`. |
+| `.dz/` | developerz.ai config: `maintainer/maintainer.yml` (`pr.required_checks`), `briefs/`, `onboarding/`. |
 
 Runtime state is `~/.cache/mini/` (`$MINI_HOME`). The sole program-file exception
 is `$MINI_HOME/tools`, where mini installs shipped scripts copied from
@@ -57,6 +89,7 @@ read runtime state in the install root.
   `config`, which `mini config` prints.
 - Escalate with `sudo -n` everywhere. A bare `sudo` in a code path the agent can
   reach will hang forever with no tty.
+- Do not use git worktrees — work directly in this checkout (see Note).
 
 ## The things that actually make it work
 
@@ -108,17 +141,19 @@ read runtime state in the install root.
 
 ## Testing
 
-mini is a wrapper around two binaries, not a framework, but it does carry plain
-bash tests under `tests/`. There is no test framework — the checks are plain
-bash scripts, and one command runs them all:
+Plain bash tests under `tests/`, no framework. One command runs them all:
 
 ```bash
 bash .github/run-tests.sh    # the whole offline suite
 ```
 
-The runner is `.github/run-tests.sh`, invoked as `bash .github/run-tests.sh`
-from the repo root. With no arguments its default member list is every
-`tests/*.sh` in the repo — all ten today:
+With no arguments the runner's member list is every `tests/*.sh` — all ten
+today. Explicit script paths as arguments override that list. Each member runs
+as its own process (`bash "$t"`), so one member's exported environment cannot
+leak into the next. Every member runs even when an earlier one fails. The
+verdict is the **exit code alone** — never grep the output for `FAIL`/`SKIP`. A
+script that prints `SKIP` under its own contract (no python3, running as root)
+still exits 0 and stays green.
 
 | Script | What it pins |
 |---|---|
@@ -133,41 +168,28 @@ from the repo root. With no arguments its default member list is every
 | `test_provider.sh` | provider and launch selection |
 | `webfetch.sh` | webfetch truncation + failure contract (PATH-stubbed, no network) |
 
-It accepts an explicit list of script paths as arguments; that list overrides
-its default member list. Each member runs as its own process (`bash "$t"`), so
-one member's exported environment cannot leak into the next. The runner decides
-by **exit code alone** — never by grepping the output for `FAIL`/`SKIP`. A
-script that prints `SKIP` under its own contract (no python3, running as root)
-still exits 0 and stays green.
+Every test is hermetic: its own `mktemp` sandbox, no live model service, no
+credential, no network. Scripts isolate external commands themselves — PATH
+stubs for curl/w3m/systemctl/sudo/nvidia-smi/rocm-smi/lspci, fixed system-only
+PATHs, or shell-function stubs — and literal URLs are never fetched. E.g.
+`model_flag_test.sh` needs no stub because the flag guard fires before any
+probe; `mini_bin_dir_test.sh` fixes PATH to `/usr/bin:/bin` and stubs opencode as
+a shell function; `ollama_systemd_failure_test.sh` neutralises systemctl and
+sudo with shell functions.
 
-Every test is hermetic: its own `mktemp` sandbox and no dependence on host
-services. Scripts that could reach an external command isolate it themselves —
-with PATH stubs for curl/w3m/systemctl/sudo/nvidia-smi/rocm-smi/lspci, fixed
-system-only PATHs, or shell-function stubs — and literal URLs are never fetched.
-For example, `model_flag_test.sh` needs no PATH stub because the flag guard
-fires before any probe; `mini_bin_dir_test.sh` fixes PATH to `/usr/bin:/bin` and
-stubs opencode as a shell function; `ollama_systemd_failure_test.sh` neutralises
-systemctl and sudo with shell functions. The suite needs no live model service,
-no credential and no network.
+- `tests/test_provider.sh` — run it first when you touch provider code.
+- `tests/webfetch.sh` — when changing capture or truncation, compare output byte
+  for byte against the fixture with zero, one, and multiple trailing newlines,
+  below and at the cap. Preserve newlines with a capture sentinel, keep
+  converter failures non-zero, and test Python character slicing with multibyte
+  input under `LC_ALL=C`.
+- `tests/remote_key_test.sh` — pins only the API-key prompt of `mini remote`.
+  With `MINI_YES=1` the prompt is skipped, nothing is read from stdin, and an
+  empty `0600` key file is written. Without `MINI_YES` the prompt reads the key
+  from stdin and that key lands in the `0600` key file. It stubs the host GPU
+  probes, so the result does not depend on the machine.
 
-Two of them earn their own note:
-
-- `tests/test_provider.sh` covers provider and launch selection — run it first
-  when you touch provider code.
-- `tests/webfetch.sh` covers the webfetch truncation/failure contract. When
-  changing capture or truncation, compare output byte for byte against the
-  fixture with zero, one, and multiple trailing newlines, below and at the cap.
-  Preserve newlines with a capture sentinel, keep converter failures non-zero,
-  and test Python character slicing with multibyte input under `LC_ALL=C`.
-
-`tests/remote_key_test.sh` pins one thing: the API-key prompt of `mini remote`.
-With `MINI_YES=1` the prompt is skipped, nothing is read from stdin, and an
-empty `0600` key file is written. Without `MINI_YES` the prompt still reads the
-key from stdin and that key lands in the `0600` key file. This script covers
-only that prompt. It stubs the host GPU probes, so the result does not depend
-on the machine it runs on.
-
-The remaining wrapper behavior is checked by hand:
+Checked by hand (or `bin/check` for the first two):
 
 ```bash
 bash -n bin/mini lib/*.sh platforms/*.sh install.sh   # syntax
@@ -182,35 +204,27 @@ Test on a box with no GPU and on one with a GPU — the selection paths differ.
 
 ## CI
 
-CI runs the whole suite as well as the syntax and lint checks
-(`.github/workflows/shell-checks.yml`).
+`.github/workflows/shell-checks.yml` has exactly one job, `shell-checks`. It is
+listed in `.dz/maintainer/maintainer.yml` under `pr.required_checks`, so a red
+run blocks auto-merge.
 
-- The `shell-checks` job runs the two lint commands above, unchanged: the
-  `bash -n` loop over `bin/mini lib/*.sh platforms/*.sh install.sh`, and
-  ShellCheck with `-x --source-path=lib --source-path=platforms -e SC2015
-  -e SC2016`. `-x` makes ShellCheck follow the files `bin/mini` sources at
-  runtime, `--source-path` says where they live — so a moved or renamed lib
-  file fails the build instead of quietly dropping out of the check. `SC2015`
-  and `SC2016` are off because both are house idioms: `a && b || c`
-  one-liners, and single-quoted text carrying literal backticks. Every other
-  code is enforced, warnings and errors included. CI installs ShellCheck
-  itself when the runner lacks it.
-- The offline suite rides in the SAME step as the `bash -n` loop — the step
-  named `Check Bash syntax and run the offline test suite` — because that
-  workflow must not grow a second job or a second `run:` step. That one step
-  body runs, in order: the `bash -n` loop, `bash .github/run-tests.sh`, a
-  probe that drives the runner with a deliberately failing member to prove
-  the runner can fail, and `bash .github/run-tests_test.sh`, the runner's own
-  verdict-contract self-test. Keep the suite in that step body; do not split
-  it into a step or a job of its own.
-- A member exiting nonzero aborts the step — GitHub's `bash` shell runs with
-  `-e` — so a red suite is a red `shell-checks` job. No step sets
-  `continue-on-error`. The step installs no ollama/opencode, references no
-  secret, and needs no network.
-
-`shell-checks` is the one check name, and it is listed in
-`.dz/maintainer/maintainer.yml` under `pr.required_checks`, so a red test run
-blocks auto-merge instead of being ignored.
+- **Step constraint:** the offline suite rides in the SAME step as the `bash -n`
+  loop — `Check Bash syntax and run the offline test suite`. The workflow must
+  not grow a second job or a second `run:` step for tests; do not split it out.
+  That step body runs, in order: the `bash -n` loop, `bash .github/run-tests.sh`,
+  a probe driving the runner with a deliberately failing member (proves the
+  runner can fail), and `bash .github/run-tests_test.sh` (the runner's
+  verdict-contract self-test).
+- A member exiting nonzero aborts the step (GitHub's `bash` runs with `-e`), so a
+  red suite is a red job. No step sets `continue-on-error`. The step installs no
+  ollama/opencode, references no secret, needs no network.
+- A second step runs ShellCheck: `-x --source-path=lib --source-path=platforms
+  -e SC2015 -e SC2016`. `-x` follows the files `bin/mini` sources at runtime;
+  `--source-path` says where they live — so a moved or renamed lib file fails
+  the build instead of quietly dropping out. `SC2015` and `SC2016` are off
+  because both are house idioms: `a && b || c` one-liners, and single-quoted
+  text carrying literal backticks. Every other code is enforced, warnings and
+  errors included. CI installs ShellCheck itself when the runner lacks it.
 
 ## Docs
 
