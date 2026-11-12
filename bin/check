@@ -31,5 +31,24 @@ fi
 
 for f in "${SHELL_FILES[@]}"; do bash -n "$f" || exit 1; done
 bash .github/run-tests.sh
+
+# Proves the runner can fail. A runner that always exited 0 would make the
+# suite above meaningless, and nothing else in the gate would notice — so a
+# deliberately failing member is driven through the SAME runner, exactly as
+# CI does (.github/workflows/shell-checks.yml). GITHUB_STEP_SUMMARY is unset
+# for this call only: the runner appends a section per invocation, and the
+# stub's deliberate "FAIL (exit 3)" must not render as a suite member.
+unset GITHUB_STEP_SUMMARY
+stub_dir="$(mktemp -d)"
+trap 'rm -rf "$stub_dir"' EXIT
+printf '%s\n' '#!/usr/bin/env bash' 'echo "deliberate failure" >&2' 'exit 3' \
+  > "${stub_dir}/failing_test.sh"
+chmod 0755 "${stub_dir}/failing_test.sh"
+if bash .github/run-tests.sh "${stub_dir}/failing_test.sh"; then
+  echo "bin/check: run-tests.sh exited 0 on a failing member" >&2
+  exit 1
+fi
+echo "run-tests.sh correctly exited nonzero on a failing member"
+
 bash .github/run-tests_test.sh
 shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 "${SHELL_FILES[@]}"

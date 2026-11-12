@@ -17,7 +17,7 @@ locally passes everywhere.
 |------|---------|------------|
 | install | `bin/setup` | (dpkg -s shellcheck curl ca-certificates procps python3 iproute2 >/dev/null 2>&1 \|\| (sudo -n apt-get update && sudo -n apt-get install -y --no-install-recommends shellcheck curl ca-certificates procps python3 iproute2)) |
 | run | `bin/dev` | bin/mini models — on developerz.ai runs, start it with code_bash_background when you need a running stack |
-| prove | `bin/check` | guards shellcheck first (exit 75 when missing), then for f in bin/mini bin/setup bin/dev bin/check bin/stop .githooks/pre-commit lib/*.sh platforms/*.sh install.sh; do bash -n "$f" \|\| exit 1; done && bash .github/run-tests.sh && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 over the same list — `bin/check <files…>` scopes to the named files and exits 79 |
+| prove | `bin/check` | guards shellcheck first (exit 75 when missing), then for f in bin/mini bin/setup bin/dev bin/check bin/stop .githooks/pre-commit lib/*.sh platforms/*.sh install.sh; do bash -n "$f" \|\| exit 1; done && bash .github/run-tests.sh && (the failing-member probe: run-tests.sh must exit nonzero on an exit-3 stub) && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 over the same list — `bin/check <files…>` scopes to the named files and exits 79 |
 | stop | `bin/stop` | bin/mini stop \|\| true — on developerz.ai runs, the platform runs this when your session ends — do not stop the stack yourself |
 
 ## Rules

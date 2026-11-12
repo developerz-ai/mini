@@ -19,7 +19,7 @@ shellcheck for lint.
 |---|---|
 | `bin/setup` | One-command setup. Runs `mise install` if mise exists; installs `shellcheck curl ca-certificates procps python3 iproute2` via `sudo -n apt-get` when any is missing. |
 | `bin/dev` | One-command dev. Runs `bin/mini models`. |
-| `bin/check` | **The gate.** `bash -n` over every shell file, `bash .github/run-tests.sh`, `bash .github/run-tests_test.sh`, then ShellCheck. `bin/check <files…>` is a scoped run: `bash -n` + ShellCheck on those files only, suite skipped. |
+| `bin/check` | **The gate.** `bash -n` over every shell file, `bash .github/run-tests.sh`, the failing-member probe (a stub exiting 3 must make run-tests.sh exit nonzero — same probe CI runs), `bash .github/run-tests_test.sh`, then ShellCheck. `bin/check <files…>` is a scoped run: `bash -n` + ShellCheck on those files only, suite skipped. |
 | `bin/stop` | One-command stop. Runs `bin/mini stop \|\| true`. |
 | `bash .github/run-tests.sh` | The whole offline suite, every `tests/*.sh`. |
 | `mini doctor` | Every runtime check, each prints its fix command. Must be clean. |

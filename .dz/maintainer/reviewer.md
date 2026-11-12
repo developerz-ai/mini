@@ -7,7 +7,7 @@
 
 ## Stack
 
-Bash + ShellCheck. The gate is `bin/check` (`for f in bin/mini lib/*.sh platforms/*.sh install.sh; do bash -n "$f" || exit 1; done && bash .github/run-tests.sh && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh install.sh`): a change that does not pass it is not proven, whatever its description says.
+Bash + ShellCheck. The gate is `bin/check` (`for f in bin/mini bin/setup bin/dev bin/check bin/stop .githooks/pre-commit lib/*.sh platforms/*.sh install.sh; do bash -n "$f" || exit 1; done && bash .github/run-tests.sh && the failing-member probe (an exit-3 stub must make run-tests.sh exit nonzero) && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 over the same list`): a change that does not pass it is not proven, whatever its description says.
 
 ## Review conventions
 
