@@ -19,7 +19,7 @@ shellcheck for lint.
 |---|---|
 | `bin/setup` | One-command setup. Idempotent. Runs `mise install` if mise exists; installs only what `command -v` shows missing among `shellcheck curl python3 ss ps` (apt packages `shellcheck curl ca-certificates python3 iproute2 procps`) — `apt-get` directly as root, `sudo -n apt-get` otherwise. With nothing missing it never calls apt-get or sudo; with no usable installer it names the missing tools and exits non-zero. |
 | `bin/dev` | One-command dev. Runs `bin/mini models`. |
-| `bin/check` | **The gate.** `bash -n` over every shell file, `bash .github/run-tests.sh`, `bash .github/run-tests_test.sh`, then ShellCheck. `bin/check <files…>` is a scoped run: `bash -n` + ShellCheck on those files only, suite skipped. |
+| `bin/check` | **The gate.** `bash -n` over `bin/mini lib/*.sh platforms/*.sh install.sh` (the same list CI checks), `bash .github/run-tests.sh`, `bash .github/run-tests_test.sh`, then ShellCheck. `bin/check <files…>` is a scoped run: `bash -n` + ShellCheck on those files only, suite skipped. |
 | `bin/stop` | One-command stop. Runs `bin/mini stop \|\| true`. |
 | `bash .github/run-tests.sh` | The whole offline suite, every `tests/*.sh`. |
 | `mini doctor` | Every runtime check, each prints its fix command. Must be clean. |
@@ -32,6 +32,11 @@ shellcheck for lint.
 | `75` | A resource the gate needs is unreachable (no `shellcheck`) — refused to grade; blame the environment, fix with `bin/setup`. |
 | `79` | Scoped run (`bin/check <files…>`) passed — commit; CI grades the rest. |
 | other | The gate ran and the change is red. |
+
+Gate scope: only `bin/mini`, `lib/*.sh`, `platforms/*.sh` and `install.sh` are
+checked. `bin/setup`, `bin/dev`, `bin/check`, `bin/stop` and
+`.githooks/pre-commit` are NOT covered — a syntax error there passes the gate
+and CI unnoticed, so run `bash -n` on them by hand when you change one.
 
 `.githooks/pre-commit` execs `bin/check`. Activate once per clone:
 `git config core.hooksPath .githooks`.
