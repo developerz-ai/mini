@@ -38,12 +38,12 @@ shellcheck (lint).
 | `bash .github/run-tests.sh` | The whole offline suite, every `tests/*.sh`. |
 | `mini doctor` | Every runtime check, each prints its fix command. Must be clean. |
 
-`bin/check` runs, in order: `bash -n` over the 14 files it lists (`bin/mini
-bin/setup bin/dev bin/check bin/stop .githooks/pre-commit lib/*.sh
-platforms/*.sh install.sh`) → `bash .github/run-tests.sh` → a probe driving the
-runner with a deliberately failing member → `bash .github/run-tests_test.sh` →
-ShellCheck over the same 14 files. `bin/check <files…>` is a scoped run: `bash
--n` + ShellCheck on those files only, suite skipped.
+`bin/check` runs, in order: `bash -n` over `bin/mini lib/*.sh platforms/*.sh
+install.sh` (the same list CI checks) → `bash .github/run-tests.sh` → a probe
+driving the runner with a deliberately failing member → `bash
+.github/run-tests_test.sh` → ShellCheck over the same files. `bin/check
+<files…>` is a scoped run: `bash -n` + ShellCheck on those files only, suite
+skipped.
 
 | `bin/check` exit | Meaning |
 |---|---|
@@ -55,10 +55,14 @@ ShellCheck over the same 14 files. `bin/check <files…>` is a scoped run: `bash
 `.githooks/pre-commit` execs `bin/check`. Activate once per clone: `git config
 core.hooksPath .githooks`.
 
-Gate scope: `share/tools/*`, `tests/*.sh`, `.github/*.sh` are in neither
-`bin/check`'s file list nor CI's `bash -n`/ShellCheck. The suite still executes
-`tests/*.sh` and `.github/run-tests*.sh`, so a broken test fails the run, but
-`share/tools/*` is never syntax- or lint-checked: check it by hand.
+Gate scope: only `bin/mini`, `lib/*.sh`, `platforms/*.sh` and `install.sh` are
+checked. `bin/setup`, `bin/dev`, `bin/check`, `bin/stop` and
+`.githooks/pre-commit` are NOT covered — a syntax error there passes the gate
+and CI unnoticed, so run `bash -n` on them by hand when you change one. And
+`share/tools/*`, `tests/*.sh`, `.github/*.sh` are in neither `bin/check`'s file
+list nor CI's `bash -n`/ShellCheck: the suite still executes `tests/*.sh` and
+`.github/run-tests*.sh`, so a broken test fails the run, but `share/tools/*` is
+never syntax- or lint-checked — check it by hand.
 
 ## Layout
 

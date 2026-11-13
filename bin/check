@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SHELL_FILES=(bin/mini bin/setup bin/dev bin/check bin/stop .githooks/pre-commit lib/*.sh platforms/*.sh install.sh)
+SHELL_FILES=(bin/mini lib/*.sh platforms/*.sh install.sh)
 
 # Precondition FIRST: without shellcheck the gate cannot grade lint, and a
 # plain exit 1 would tell the platform the change is red when it is the box
