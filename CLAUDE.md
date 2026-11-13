@@ -1,14 +1,7 @@
 # mini
 
-Bash wrapper that turns **opencode + ollama** into a local Linux sysadmin agent.
-No cloud provider, no API key. A wrapper, not a framework: opencode is the agent
-runtime, ollama runs the model. mini picks a model that fits the hardware, gives
-it a working context window, a good system prompt and a few tools. Before
-building anything, check whether opencode already does it.
-
-**Stack:** bash + `curl`/coreutils/`awk`/`sed` · opencode (agent runtime) ·
-ollama (model server) · python3 optional (HTML parsing, always with a fallback) ·
-shellcheck (lint).
+Bash wrapper that turns **opencode + ollama** into a local Linux sysadmin agent — no cloud provider, no API key; a wrapper, not a framework: mini picks a model that fits the hardware, gives it a working context window, a good system prompt and a few tools. Before building anything, check whether opencode already does it.
+**Stack:** bash + `curl`/coreutils/`awk`/`sed` · opencode (agent runtime) · ollama (model server) · python3 optional (HTML parsing, always with a fallback) · shellcheck (lint).
 
 ## Non-negotiables
 
@@ -38,12 +31,17 @@ shellcheck (lint).
 | `bash .github/run-tests.sh` | The whole offline suite, every `tests/*.sh`. |
 | `mini doctor` | Every runtime check, each prints its fix command. Must be clean. |
 
-`bin/check` runs, in order: `bash -n` over the 14 files it lists (`bin/mini
-bin/setup bin/dev bin/check bin/stop .githooks/pre-commit lib/*.sh
-platforms/*.sh install.sh`) → `bash .github/run-tests.sh` → a probe driving the
-runner with a deliberately failing member → `bash .github/run-tests_test.sh` →
-ShellCheck over the same 14 files. `bin/check <files…>` is a scoped run: `bash
--n` + ShellCheck on those files only, suite skipped.
+`bin/check` runs, in order:
+
+| # | Step |
+|---|---|
+| 1 | `bash -n` over the 14 files it lists: `bin/mini bin/setup bin/dev bin/check bin/stop .githooks/pre-commit lib/*.sh platforms/*.sh install.sh` |
+| 2 | `bash .github/run-tests.sh` |
+| 3 | Probe driving the runner with a deliberately failing member |
+| 4 | `bash .github/run-tests_test.sh` |
+| 5 | ShellCheck over the same 14 files |
+
+- `bin/check <files…>` is a scoped run: `bash -n` + ShellCheck on those files only, suite skipped.
 
 | `bin/check` exit | Meaning |
 |---|---|
@@ -52,13 +50,15 @@ ShellCheck over the same 14 files. `bin/check <files…>` is a scoped run: `bash
 | `79` | Scoped run passed — commit; CI grades the rest. |
 | other | The gate ran and the change is red. |
 
-`.githooks/pre-commit` execs `bin/check`. Activate once per clone: `git config
-core.hooksPath .githooks`.
+- `.githooks/pre-commit` execs `bin/check`. Activate once per clone: `git config core.hooksPath .githooks`.
 
-Gate scope: `share/tools/*`, `tests/*.sh`, `.github/*.sh` are in neither
-`bin/check`'s file list nor CI's `bash -n`/ShellCheck. The suite still executes
-`tests/*.sh` and `.github/run-tests*.sh`, so a broken test fails the run, but
-`share/tools/*` is never syntax- or lint-checked: check it by hand.
+Gate scope:
+
+| Path set | Graded how |
+|---|---|
+| `share/tools/*` | In neither `bin/check`'s file list nor CI's `bash -n`/ShellCheck — never syntax- or lint-checked: check it by hand. |
+| `tests/*.sh` | In neither `bin/check`'s file list nor CI's `bash -n`/ShellCheck, but the suite still executes it, so a broken test fails the run. |
+| `.github/*.sh` | In neither `bin/check`'s file list nor CI's `bash -n`/ShellCheck, but the suite still executes `.github/run-tests*.sh`, so a broken test fails the run. |
 
 ## Layout
 
@@ -108,14 +108,14 @@ Gate scope: `share/tools/*`, `tests/*.sh`, `.github/*.sh` are in neither
 
 ## Testing
 
-Plain bash under `tests/`, no framework: `bash .github/run-tests.sh`.
+- Plain bash under `tests/`, no framework: `bash .github/run-tests.sh`.
 
-Runner contract: no arguments → every `tests/*.sh` (eleven today); explicit
-script paths override that list. Each member runs as its own process (`bash
-"$t"`) so exported env cannot leak between members. Every member runs even when
-an earlier one fails. Verdict = **exit code alone** — never grep output for
-`FAIL`/`SKIP`; a script printing `SKIP` under its own contract (no python3,
-running as root) exits 0 and stays green.
+Runner contract:
+
+- No arguments → every `tests/*.sh` (eleven today); explicit script paths override that list.
+- Each member runs as its own process (`bash "$t"`), so exported env cannot leak between members.
+- Every member runs even when an earlier one fails.
+- Verdict = **exit code alone** — never grep output for `FAIL`/`SKIP`; a script printing `SKIP` under its own contract (no python3, running as root) exits 0 and stays green.
 
 | Script | What it pins |
 |---|---|
@@ -131,13 +131,13 @@ running as root) exits 0 and stays green.
 | `test_provider.sh` | provider and launch selection |
 | `webfetch.sh` | webfetch truncation + failure contract (PATH-stubbed, no network) |
 
-Every test is hermetic: own `mktemp` sandbox, no live model service, no
-credential, no network, literal URLs never fetched. Scripts isolate external
-commands themselves — PATH stubs (curl/w3m/systemctl/sudo/nvidia-smi/rocm-smi/
-lspci), fixed system-only PATHs, or shell-function stubs. E.g. `model_flag_test.sh`
-needs none (its flag guard fires before any probe); `mini_bin_dir_test.sh` fixes
-PATH to `/usr/bin:/bin` and stubs opencode as a shell function;
-`ollama_systemd_failure_test.sh` neutralises systemctl and sudo with functions.
+Every test is hermetic:
+
+- Own `mktemp` sandbox; no live model service, no credential, no network, literal URLs never fetched.
+- Scripts isolate external commands themselves — PATH stubs (curl/w3m/systemctl/sudo/nvidia-smi/rocm-smi/lspci), fixed system-only PATHs, or shell-function stubs.
+- `model_flag_test.sh` needs none (its flag guard fires before any probe).
+- `mini_bin_dir_test.sh` fixes PATH to `/usr/bin:/bin` and stubs opencode as a shell function.
+- `ollama_systemd_failure_test.sh` neutralises systemctl and sudo with functions.
 
 | When you touch… | Do |
 |---|---|
@@ -156,14 +156,12 @@ mini "what is wrong with this machine"                # end to end
 mini model qwen2.5-coder:3b && mini "check disk"      # a second model
 ```
 
-Test on a box with no GPU and one with a GPU — the selection paths differ.
+- Test on a box with no GPU and one with a GPU — the selection paths differ.
 
 ## CI
 
-`.github/workflows/shell-checks.yml`: exactly **one job**, `shell-checks`, named
-in `.dz/maintainer/maintainer.yml` under `pr.required_checks` — red blocks
-auto-merge. Steps: checkout → ensure ShellCheck installed → test step →
-ShellCheck step.
+- `.github/workflows/shell-checks.yml`: exactly **one job**, `shell-checks`, named in `.dz/maintainer/maintainer.yml` under `pr.required_checks` — red blocks auto-merge.
+- Steps: checkout → ensure ShellCheck installed → test step → ShellCheck step.
 
 | Constraint | Detail |
 |---|---|
