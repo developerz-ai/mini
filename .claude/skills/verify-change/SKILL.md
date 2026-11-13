@@ -9,15 +9,16 @@ description: Prove a change in developerz-ai/mini before committing or opening a
 
 ## The one gate
 
-`bin/check` is the gate. CI runs the same commands, and the pre-commit hook runs it
-once activated (`git config core.hooksPath .githooks`), so a change that passes it
-locally passes everywhere.
+`bin/check` is the gate. CI runs the same commands except the gate's one extra,
+syntax-only `bash -n` pass over the five dev-workflow scripts CI's list omits; the
+pre-commit hook runs the gate once activated (`git config core.hooksPath .githooks`),
+so a change that passes it locally passes everywhere.
 
 | Step | Command | What it is |
 |------|---------|------------|
-| install | `bin/setup` | idempotent: `mise install` if mise exists, then installs only what `command -v` shows missing among shellcheck, curl, python3, ss, ps — `apt-get` directly as root, `sudo -n apt-get` otherwise; nothing missing means no apt-get/sudo call, no usable installer means a message naming the missing tools and a non-zero exit |
+| install | `bin/setup` | idempotent: `mise install` if mise exists, best-effort — a mise failure warns and setup continues, then installs only what `command -v` shows missing among shellcheck, curl, python3, ss, ps — `apt-get` directly as root, `sudo -n apt-get` otherwise; nothing missing means no apt-get/sudo call, no usable installer means a message naming the missing tools and a non-zero exit |
 | run | `bin/dev` | bin/mini models — on developerz.ai runs, start it with code_bash_background when you need a running stack |
-| prove | `bin/check` | guards shellcheck first (exit 75 when missing), then for f in bin/mini lib/*.sh platforms/*.sh install.sh; do bash -n "$f" \|\| exit 1; done && bash .github/run-tests.sh && a runner-can-fail probe (drives `.github/run-tests.sh` with a deliberately failing stub member and fails the gate if the runner exits 0) && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 over the same list — `bin/setup`, `bin/dev`, `bin/check`, `bin/stop` and `.githooks/pre-commit` are not covered (check them by hand with `bash -n`); `bin/check <files…>` scopes to the named files and exits 79 |
+| prove | `bin/check` | guards shellcheck first (exit 75 when missing), then for f in bin/mini lib/*.sh platforms/*.sh install.sh bin/setup bin/dev bin/check bin/stop .githooks/pre-commit; do bash -n "$f" \|\| exit 1; done && bash .github/run-tests.sh && a runner-can-fail probe (drives `.github/run-tests.sh` with a deliberately failing stub member and fails the gate if the runner exits 0) && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 over bin/mini lib/*.sh platforms/*.sh install.sh only — the five dev scripts (`bin/setup`, `bin/dev`, `bin/check`, `bin/stop`, `.githooks/pre-commit`) are bash -n'd by the gate (syntax only: gate and pre-commit hook, not CI's list) and never ShellChecked; `bin/check <files…>` scopes to the named files and exits 79 |
 | stop | `bin/stop` | bin/mini stop \|\| true — on developerz.ai runs, the platform runs this when your session ends — do not stop the stack yourself |
 
 ## Rules
