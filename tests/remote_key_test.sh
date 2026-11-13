@@ -42,6 +42,27 @@ stub nvidia-smi "printf '%s\\n' 'Stub GPU, 0'"
 stub rocm-smi   "printf '%s\\n' ''"
 stub lspci      "printf '%s\\n' '00:02.0 VGA compatible controller: Stub'"
 
+# `python3` must WORK under this test's sandbox HOME: every launch below runs
+# with HOME=${TMP}/…, and on mise-managed machines PATH resolves python3 to a
+# mise shim that refuses a foreign HOME ("Config files … are not trusted").
+# A leaked shim then kills mini's config validation with a suppressed
+# interpreter error, misreported as "generated an invalid opencode.json".
+# Probe candidates exactly the way lib/opencode.sh validates (under a foreign
+# HOME) and symlink the first interpreter that parses JSON into STUB_BIN, so
+# PATH="${STUB_BIN}:${PATH}" picks it — mirroring opencode_config_test.sh,
+# which symlinks the real interpreter into its sandbox. If none qualifies,
+# leave python3 absent: mini then skips validation, its documented
+# no-python3 behavior, and the key-prompt contract is unaffected.
+printf '{}\n' > "${TMP}/probe.json"
+for cand in python3 /usr/bin/python3 /usr/local/bin/python3; do
+  p=$(command -v "$cand" 2>/dev/null) || continue
+  if HOME="${TMP}" "$p" -c 'import json,sys; json.load(open(sys.argv[1]))' \
+    "${TMP}/probe.json" 2>/dev/null; then
+    ln -s "$p" "${STUB_BIN}/python3"
+    break
+  fi
+done
+
 REMOTE_URL='https://example.invalid/v1'
 REMOTE_MODEL='test/model'
 SENTINEL='SENTINEL'
