@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # pre-commit gate — established by dz-runner setup mode. Runs `bin/check`;
-# CI runs the same commands, so a commit that would fail CI fails here first.
+# `bin/check` is a superset of CI: same steps, wider file list. CI lints only
+# bin/mini lib/*.sh platforms/*.sh install.sh; bin/check also covers bin/setup,
+# bin/dev, bin/check, bin/stop and .githooks/pre-commit. So a commit that would
+# fail CI fails here first — and the setup-mode scripts are graded too.
 # ACTIVATE IT (once, per clone): git config core.hooksPath .githooks
 set -euo pipefail
 cd "$(dirname "$0")/.."

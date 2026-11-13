@@ -4,13 +4,22 @@
 # Installer: apt-get directly as root, `sudo -n apt-get` otherwise. Where neither
 # works it names the missing tools and exits non-zero; with nothing missing it
 # never touches apt-get or sudo.
+#
+# mise, when present, is a convenience — not one of the five tools above. It is
+# run best-effort: a failing `mise install` warns and setup goes on to the tools
+# it owns, because mise's exit code is not setup's verdict.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 die() { printf 'bin/setup: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'bin/setup: warning: %s\n' "$*" >&2; }
 
 if command -v mise >/dev/null 2>&1; then
-  mise install
+  mise_rc=0
+  mise install || mise_rc=$?
+  if [ "$mise_rc" -ne 0 ]; then
+    warn "mise install failed (exit ${mise_rc}) — continuing without mise; fix it by hand: mise install"
+  fi
 fi
 
 missing=()

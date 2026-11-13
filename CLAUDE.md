@@ -17,9 +17,9 @@ shellcheck for lint.
 
 | Command | What |
 |---|---|
-| `bin/setup` | One-command setup. Idempotent. Runs `mise install` if mise exists; installs only what `command -v` shows missing among `shellcheck curl python3 ss ps` (apt packages `shellcheck curl ca-certificates python3 iproute2 procps`) — `apt-get` directly as root, `sudo -n apt-get` otherwise. With nothing missing it never calls apt-get or sudo; with no usable installer it names the missing tools and exits non-zero. |
+| `bin/setup` | One-command setup. Idempotent. Runs `mise install` if mise exists — best-effort: a failing mise warns on stderr (naming mise and the manual fix) and setup goes on, because mise's exit code is not setup's verdict. Then installs only what `command -v` shows missing among `shellcheck curl python3 ss ps` (apt packages `shellcheck curl ca-certificates python3 iproute2 procps`) — `apt-get` directly as root, `sudo -n apt-get` otherwise. With nothing missing it never calls apt-get or sudo; with no usable installer it names the missing tools and exits non-zero. |
 | `bin/dev` | One-command dev. Runs `bin/mini models`. |
-| `bin/check` | **The gate.** `bash -n` over every shell file, `bash .github/run-tests.sh`, `bash .github/run-tests_test.sh`, then ShellCheck. `bin/check <files…>` is a scoped run: `bash -n` + ShellCheck on those files only, suite skipped. |
+| `bin/check` | **The gate.** `bash -n` over the 14 files `bin/check` lists — `bin/mini bin/setup bin/dev bin/check bin/stop .githooks/pre-commit lib/*.sh platforms/*.sh install.sh` — then `bash .github/run-tests.sh`, `bash .github/run-tests_test.sh`, then ShellCheck over the same 14 files. `bin/check <files…>` is a scoped run: `bash -n` + ShellCheck on those files only, suite skipped. Files outside that list (`share/tools/*`, `tests/*.sh`, `.github/*.sh`) are in neither the gate nor CI's lint step, so a syntax error in one of them ships green. |
 | `bin/stop` | One-command stop. Runs `bin/mini stop \|\| true`. |
 | `bash .github/run-tests.sh` | The whole offline suite, every `tests/*.sh`. |
 | `mini doctor` | Every runtime check, each prints its fix command. Must be clean. |
@@ -147,7 +147,7 @@ Plain bash tests under `tests/`, no framework. One command runs them all:
 bash .github/run-tests.sh    # the whole offline suite
 ```
 
-With no arguments the runner's member list is every `tests/*.sh` — all eleven
+With no arguments the runner's member list is every `tests/*.sh` — all twelve
 today. Explicit script paths as arguments override that list. Each member runs
 as its own process (`bash "$t"`), so one member's exported environment cannot
 leak into the next. Every member runs even when an earlier one fails. The
@@ -157,6 +157,7 @@ still exits 0 and stays green.
 
 | Script | What it pins |
 |---|---|
+| `check_test.sh` | `bin/check` — its reserved exit codes: 75 (no shellcheck), 79 (scoped run), 1 (syntax error) |
 | `host_memory_test.sh` | `write_host_memory` — the writer of `$MINI_HOME/memories/00-host.md` |
 | `init_test.sh` | init-system detection + doctor's Init step |
 | `mini_bin_dir_test.sh` | the PATH the agent inherits, and the `/remember` command |
@@ -165,7 +166,7 @@ still exits 0 and stays green.
 | `ollama_systemd_failure_test.sh` | systemd rebind and stop refusals — a failure is reported, not swallowed |
 | `opencode_config_test.sh` | the `opencode.json` regeneration contract (skips without python3) |
 | `remote_key_test.sh` | the API-key prompt of `mini remote` |
-| `setup_test.sh` | `bin/setup` — installs only what is missing, root vs `sudo -n`, clear failure with no installer |
+| `setup_test.sh` | `bin/setup` — installs only what is missing, root vs `sudo -n`, clear failure with no installer, best-effort `mise install` |
 | `test_provider.sh` | provider and launch selection |
 | `webfetch.sh` | webfetch truncation + failure contract (PATH-stubbed, no network) |
 

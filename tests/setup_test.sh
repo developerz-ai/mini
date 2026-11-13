@@ -14,6 +14,8 @@
 #                                -> non-zero, message names the missing tool
 #   E) mise absent does not abort; mise present runs `mise install`
 #   F) installer "succeeds" but the tool stays missing -> non-zero
+#   G) `mise install` fails        -> warning naming mise, the five tools are
+#                                    still probed and installed, exit 0
 set -euo pipefail
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -177,4 +179,26 @@ run_setup noop STUB_UID=0
 errs noop | grep -Eq 'still missing after install: ss([^[:alnum:]_]|$)' || fail "noop installer: message does not name ss: '$(errs noop)'"
 ok 'installer that installs nothing: non-zero, names what is still missing'
 
-printf 'PASS: bin/setup idempotence, installer selection, failure messages\n'
+# G) `mise install` fails -> warn, and the five tools this script owns are
+# still probed and installed. mise is not one of them, so its failure must not
+# decide the exit code.
+mkbox misefail shellcheck curl python3 ps
+stub_apt misefail; stub_sudo misefail
+cat > "${TMP}/misefail/bin/mise" <<'EOF'
+#!/bin/sh
+echo "mise $*" >> "${0%/*}/../calls.log"
+echo "mise: install failed" >&2
+exit 1
+EOF
+chmod +x "${TMP}/misefail/bin/mise"
+run_setup misefail STUB_UID=0
+[ "$rc" -eq 0 ] || fail "mise failure: exit $rc — stderr: '$(errs misefail)'"
+calls misefail | grep -Fxq 'mise install' \
+  || fail "mise failure: mise was not run: '$(calls misefail)'"
+calls misefail | grep -Fq 'apt-get install -y --no-install-recommends iproute2' \
+  || fail "mise failure: the missing tool was not installed: '$(calls misefail)'"
+errs misefail | grep -Fq 'mise install' \
+  || fail "mise failure: no warning naming mise: '$(errs misefail)'"
+ok 'mise failure: warns, still installs the five tools, exit 0'
+
+printf 'PASS: bin/setup idempotence, installer selection, failure messages, best-effort mise\n'

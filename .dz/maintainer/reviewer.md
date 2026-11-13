@@ -7,7 +7,7 @@
 
 ## Stack
 
-Bash + ShellCheck. The gate is `bin/check` (`for f in bin/mini lib/*.sh platforms/*.sh install.sh; do bash -n "$f" || exit 1; done && bash .github/run-tests.sh && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh install.sh`): a change that does not pass it is not proven, whatever its description says.
+Bash + ShellCheck. The gate is `bin/check` — it syntax-checks, suites and ShellChecks `bin/mini bin/setup bin/dev bin/check bin/stop .githooks/pre-commit lib/*.sh platforms/*.sh install.sh` (bin/check:14), proves the suite runner can fail (a deliberately failing member must make the runner exit nonzero) and runs `.github/run-tests_test.sh`. A change that does not pass `bin/check` is not proven, whatever its description says. CI (`.github/workflows/shell-checks.yml`) runs the same steps over a NARROWER list — `bin/mini lib/*.sh platforms/*.sh install.sh` — so CI never lints the five setup-mode scripts: `bin/check` is the wider gate, and grading only CI's list misses `bin/setup`, `bin/dev`, `bin/check`, `bin/stop` and `.githooks/pre-commit`.
 
 ## Review conventions
 
