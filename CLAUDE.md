@@ -77,11 +77,10 @@ never syntax- or lint-checked — check it by hand.
 | `lib/opencode.sh` | Generates `opencode.json`, launches opencode |
 | `lib/doctor.sh` | Every check, each with its fix command |
 | `platforms/<id>.sh` | Distro-specific package handling |
-| `share/prompts/base.md` | Platform-neutral system prompt |
-| `share/prompts/<id>.md` | Distro-specific system prompt |
+| `share/prompts/base.md` / `<id>.md` | Platform-neutral / distro-specific system prompt |
 | `share/tools/*` | `websearch` `webfetch` `sysreport` — plain bash |
 | `share/opencode-tools/*.ts` | TS definitions exposing those to opencode |
-| `share/models.tsv` | Model registry. Dated. |
+| `share/models.tsv` | Model registry. Dated header (`curated 2026-07`). |
 | `install.sh` | curl-to-bash entry point |
 | `tests/` | Offline bash checks. No framework. |
 | `.github/run-tests.sh` | Suite runner (outside `tests/` on purpose). `run-tests_test.sh` is its verdict self-test. |
@@ -108,7 +107,7 @@ never syntax- or lint-checked — check it by hand.
 | New platform | See `platforms/README.md`. Two files, no registry to edit. |
 | New tool | Bash script in `share/tools/`, TS wrapper in `share/opencode-tools/`, a row in the table in `share/prompts/base.md`, a check in `lib/doctor.sh`. |
 | New slash command | The `command` block in `opencode_write_config`. |
-| Docs | `README.md` is for users; `docs/` covers usage, architecture, models, tools, prompts. Update the relevant one in the same change. |
+| Docs | `README.md` is for users; `docs/` has seven pages — README, architecture, models, prompts, tools, troubleshooting, usage. Update the relevant one in the same change. |
 
 ## Testing
 
@@ -127,8 +126,8 @@ running as root) exits 0 and stays green.
 | `init_test.sh` | init-system detection + doctor's Init step |
 | `mini_bin_dir_test.sh` | the PATH the agent inherits, and the `/remember` command |
 | `model_flag_test.sh` | the missing-argument refusal of `mini --model` |
-| `ollama_bind_test.sh` | doctor's ollama bind verdict, read from the observed listener |
-| `ollama_systemd_failure_test.sh` | systemd rebind and stop refusals — a failure is reported, not swallowed |
+| `ollama_bind_test.sh` | doctor's ollama bind verdict, from the observed listener |
+| `ollama_systemd_failure_test.sh` | systemd rebind/stop refusals — failure reported, not swallowed |
 | `opencode_config_test.sh` | the `opencode.json` regeneration contract (skips without python3) |
 | `remote_key_test.sh` | the API-key prompt of `mini remote` |
 | `setup_test.sh` | `bin/setup` — installs only what is missing, root vs `sudo -n`, clear failure with no installer |
@@ -166,8 +165,8 @@ Test on a box with no GPU and one with a GPU — the selection paths differ.
 
 `.github/workflows/shell-checks.yml`: exactly **one job**, `shell-checks`, named
 in `.dz/maintainer/maintainer.yml` under `pr.required_checks` — red blocks
-auto-merge. Steps: checkout → ensure ShellCheck installed → test step →
-ShellCheck step.
+auto-merge. Steps: checkout → ensure ShellCheck installed (CI installs it when
+the runner lacks it) → test step → ShellCheck step.
 
 | Constraint | Detail |
 |---|---|
