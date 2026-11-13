@@ -31,7 +31,7 @@ shellcheck (lint).
 
 | Command | What |
 |---|---|
-| `bin/setup` | Idempotent setup. Runs `mise install` if mise exists. Installs only what `command -v` shows missing among `shellcheck curl python3 ss ps` (apt: `shellcheck curl ca-certificates python3 iproute2 procps`) — `apt-get` as root, `sudo -n apt-get` otherwise. Nothing missing → never calls apt-get or sudo. No usable installer → names the missing tools, exits non-zero. |
+| `bin/setup` | Idempotent setup. Runs `mise install` if mise exists, best-effort: a mise failure warns and setup continues (pinned by `tests/setup_test.sh`). Installs only what `command -v` shows missing among `shellcheck curl python3 ss ps` (apt: `shellcheck curl ca-certificates python3 iproute2 procps`) — `apt-get` as root, `sudo -n apt-get` otherwise. Nothing missing → never calls apt-get or sudo. No usable installer → names the missing tools, exits non-zero. |
 | `bin/dev` | Runs `bin/mini models`. |
 | `bin/check` | **The gate** (below). |
 | `bin/stop` | Runs `bin/mini stop \|\| true`. |
@@ -42,7 +42,7 @@ shellcheck (lint).
 
 | Mode | Runs, in order |
 |---|---|
-| Full | `bash -n` over `bin/mini lib/*.sh platforms/*.sh install.sh` (the same list CI checks) → `bash .github/run-tests.sh` → a probe driving the runner with a deliberately failing member → `bash .github/run-tests_test.sh` → ShellCheck over the same files |
+| Full | `bash -n` over `bin/mini lib/*.sh platforms/*.sh install.sh` (the same list CI checks) PLUS `bin/setup bin/dev bin/check bin/stop .githooks/pre-commit` (the five dev-workflow scripts — syntax only; CI's bash -n list is unchanged) → `bash .github/run-tests.sh` → a probe driving the runner with a deliberately failing member → `bash .github/run-tests_test.sh` → ShellCheck over `bin/mini lib/*.sh platforms/*.sh install.sh` (unchanged — CI's exact list) |
 | Scoped: `bin/check <files…>` | `bash -n` + ShellCheck on those files only; suite skipped |
 
 | `bin/check` exit | Meaning |
@@ -60,7 +60,7 @@ Gate scope:
 | Files | Covered? |
 |---|---|
 | `bin/mini`, `lib/*.sh`, `platforms/*.sh`, `install.sh` | Yes — gate and CI (`bash -n` + ShellCheck). |
-| `bin/setup`, `bin/dev`, `bin/check`, `bin/stop`, `.githooks/pre-commit` | NOT covered — a syntax error there passes the gate and CI unnoticed; run `bash -n` on them by hand when you change one. |
+| `bin/setup`, `bin/dev`, `bin/check`, `bin/stop`, `.githooks/pre-commit` | Gate + pre-commit hook, `bash -n` only (syntax; the gate loop extends past CI's list). Not in CI's bash -n list, never ShellChecked. A broken `bin/setup` also fails the suite — `tests/setup_test.sh` executes it. |
 | `tests/*.sh`, `.github/*.sh` | In neither `bash -n`/ShellCheck list, but the suite still executes `tests/*.sh` and `.github/run-tests*.sh`, so a broken test fails the run. |
 | `share/tools/*` | Never syntax- or lint-checked anywhere — check by hand. |
 
@@ -130,7 +130,7 @@ Runner contract:
 | `ollama_systemd_failure_test.sh` | systemd rebind/stop refusals — failure reported, not swallowed |
 | `opencode_config_test.sh` | the `opencode.json` regeneration contract (skips without python3) |
 | `remote_key_test.sh` | the API-key prompt of `mini remote` |
-| `setup_test.sh` | `bin/setup` — installs only what is missing, root vs `sudo -n`, clear failure with no installer |
+| `setup_test.sh` | `bin/setup` — installs only what is missing, root vs `sudo -n`, clear failure with no installer, best-effort mise (a failure warns, setup continues) |
 | `test_provider.sh` | provider and launch selection |
 | `webfetch.sh` | webfetch truncation + failure contract (PATH-stubbed, no network) |
 

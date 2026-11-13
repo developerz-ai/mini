@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # one-command check (typecheck + lint + test) — established by dz-runner setup mode. One command; adjust as the repo grows.
 # The full gate mirrors .github/workflows/shell-checks.yml step for step: bash -n,
-# the suite, the runner-can-fail probe, the runner's verdict self-test, ShellCheck.
+# the suite, the runner-can-fail probe, the runner's verdict self-test, ShellCheck —
+# plus one pass CI lacks: a syntax-only bash -n over the five dev-workflow scripts
+# in SYNTAX_FILES, which CI's list does not include.
 #
 # Exit codes (.claude/skills/verify-change/SKILL.md):
 #   0                full gate passed — commit
@@ -12,6 +14,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SHELL_FILES=(bin/mini lib/*.sh platforms/*.sh install.sh)
+# Dev-workflow scripts: bash -n (syntax) by the full gate only — never
+# ShellChecked, absent from CI's list.
+SYNTAX_FILES=(bin/setup bin/dev bin/check bin/stop .githooks/pre-commit)
 
 # Precondition FIRST: without shellcheck the gate cannot grade lint, and a
 # plain exit 1 would tell the platform the change is red when it is the box
@@ -31,7 +36,7 @@ if [ "$#" -gt 0 ]; then
   exit 79
 fi
 
-for f in "${SHELL_FILES[@]}"; do bash -n "$f" || exit 1; done
+for f in "${SHELL_FILES[@]}" "${SYNTAX_FILES[@]}"; do bash -n "$f" || exit 1; done
 bash .github/run-tests.sh
 
 # Proves the runner can fail (as CI does): drive it with a deliberately failing

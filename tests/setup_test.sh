@@ -13,6 +13,8 @@
 #   D) tool missing, no installer (no apt-get / no sudo / sudo -n refused)
 #                                -> non-zero, message names the missing tool
 #   E) mise absent does not abort; mise present runs `mise install`
+#   E2) failing `mise install` -> warns on stderr, exit still 0
+#   E3) failing mise AND a missing tool -> tool still installed, exit 0
 #   F) installer "succeeds" but the tool stays missing -> non-zero
 set -euo pipefail
 
@@ -89,6 +91,20 @@ EOF
   chmod +x "${dir}/sudo"
 }
 
+# stub_mise <name> [fail] — mise stub. Logs its args; with mode `fail` it
+# complains on stderr and exits 1, otherwise exits 0.
+stub_mise() {
+  local name="$1" mode="${2:-}" dir="${TMP}/${1}/bin"
+  cat > "${dir}/mise" <<EOF
+#!/bin/sh
+d="\${0%/*}"
+echo "mise \$*" >> "\${d}/../calls.log"
+[ "$mode" = fail ] && { echo 'mise: no usable config' >&2; exit 1; }
+exit 0
+EOF
+  chmod +x "${dir}/mise"
+}
+
 # run_setup <name> [VAR=value…] — run bin/setup with PATH = the sandbox only.
 # rc, out and err land in $rc, $TMP/<name>/out, $TMP/<name>/err.
 run_setup() {
@@ -160,15 +176,41 @@ ok 'sudo -n refused: non-zero, names the missing tool, apt-get not run'
 
 # E) mise absent never aborted (every case above ran without it); present -> runs.
 mkbox mise "${ALL_TOOLS[@]}"
-cat > "${TMP}/mise/bin/mise" <<'EOF'
-#!/bin/sh
-echo "mise $*" >> "${0%/*}/../calls.log"
-EOF
-chmod +x "${TMP}/mise/bin/mise"
+stub_mise mise
 run_setup mise
 [ "$rc" -eq 0 ] || fail "mise: exit $rc — stderr: '$(errs mise)'"
 calls mise | grep -Fxq 'mise install' || fail "mise: not run: '$(calls mise)'"
 ok 'mise absent is fine; mise present runs mise install'
+
+# E2) mise present but failing -> best-effort: warns on stderr, setup goes on.
+mkbox misefail "${ALL_TOOLS[@]}"; stub_apt misefail; stub_sudo misefail
+stub_mise misefail fail
+run_setup misefail
+[ "$rc" -eq 0 ] || fail "mise fail: exit $rc — stderr: '$(errs misefail)'"
+calls misefail | grep -Fxq 'mise install' || fail "mise fail: mise not run: '$(calls misefail)'"
+errs misefail | grep -Fq "'mise install' failed (exit 1)" \
+  || fail "mise fail: warning does not name mise and its exit: '$(errs misefail)'"
+errs misefail | grep -Fq 'continuing anyway' \
+  || fail "mise fail: warning does not say setup continues: '$(errs misefail)'"
+# second run: still exit 0, still warns — best-effort is idempotent.
+run_setup misefail
+[ "$rc" -eq 0 ] || fail "mise fail rerun: exit $rc — stderr: '$(errs misefail)'"
+[ "$(calls misefail | grep -Fc 'mise install')" -eq 2 ] \
+  || fail "mise fail rerun: mise not run exactly twice: '$(calls misefail)'"
+ok 'failing mise: exit 0, warning names mise, its exit, says setup continued'
+
+# E3) failing mise AND a missing tool -> warns, still installs the tool, exit 0.
+mkbox misetool shellcheck curl python3 ps; stub_apt misetool; stub_sudo misetool
+stub_mise misetool fail
+run_setup misetool STUB_UID=0
+[ "$rc" -eq 0 ] || fail "mise fail + tool: exit $rc — stderr: '$(errs misetool)'"
+calls misetool | grep -Fxq 'mise install' || fail "mise fail + tool: mise not run: '$(calls misetool)'"
+calls misetool | grep -Fq 'apt-get install -y --no-install-recommends iproute2' \
+  || fail "mise fail + tool: iproute2 not installed: '$(calls misetool)'"
+errs misetool | grep -Fq 'continuing anyway' \
+  || fail "mise fail + tool: no mise warning on stderr: '$(errs misetool)'"
+[ -f "${TMP}/misetool/bin/ss" ] || fail 'mise fail + tool: ss never appeared'
+ok 'failing mise + missing tool: tool still installed, warning on stderr, exit 0'
 
 # F) installer reports success but the tool never appears -> not green.
 mkbox noop shellcheck curl python3 ps; stub_apt noop noop

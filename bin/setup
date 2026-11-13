@@ -3,14 +3,18 @@
 # Needs: shellcheck (lint), curl, python3 (optional parsing), ss (iproute2), ps (procps).
 # Installer: apt-get directly as root, `sudo -n apt-get` otherwise. Where neither
 # works it names the missing tools and exits non-zero; with nothing missing it
-# never touches apt-get or sudo.
+# never touches apt-get or sudo. mise is best-effort: a failed `mise install`
+# warns on stderr and setup continues.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 die() { printf 'bin/setup: %s\n' "$*" >&2; exit 1; }
 
 if command -v mise >/dev/null 2>&1; then
-  mise install
+  # errexit-safe capture: under `if !`, $? is the negated status, not mise's.
+  mise_rc=0
+  mise install || mise_rc=$?
+  [ "$mise_rc" -eq 0 ] || printf "bin/setup: 'mise install' failed (exit %s) — continuing anyway; install dev tools manually with: mise install\n" "$mise_rc" >&2
 fi
 
 missing=()
