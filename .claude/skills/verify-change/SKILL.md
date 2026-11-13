@@ -10,20 +10,23 @@ description: Prove a change in developerz-ai/mini before committing or opening a
 ## The one gate
 
 `bin/check` is the gate, and the pre-commit hook runs it once activated
-(`git config core.hooksPath .githooks`). `bin/check` is a SUPERSET of CI: the same
-steps — `bash -n`, the offline suite, the runner-can-fail probe, the runner's
-verdict self-test, ShellCheck — over a WIDER file list. CI
-(`.github/workflows/shell-checks.yml`) grades the narrower
-`bin/mini lib/*.sh platforms/*.sh install.sh`, so the five setup-mode scripts
-(`bin/setup`, `bin/dev`, `bin/check`, `bin/stop`, `.githooks/pre-commit`) are
-linted ONLY by `bin/check`: a green CI run says nothing about them. A change that
-passes `bin/check` locally passes CI too.
+(`git config core.hooksPath .githooks`). `bin/check` mirrors CI
+(`.github/workflows/shell-checks.yml`) step for step — `bash -n`, the offline
+suite, the runner-can-fail probe, the runner's verdict self-test, ShellCheck —
+over the SAME file list, `bin/mini lib/*.sh platforms/*.sh install.sh`
+(`SHELL_FILES` in `bin/check`). A change that passes `bin/check` locally passes
+CI too. Neither one runs `bash -n` or ShellCheck on the five setup-mode scripts
+(`bin/setup`, `bin/dev`, `bin/check`, `bin/stop`, `.githooks/pre-commit`); the
+suite executes `bin/setup` (`tests/setup_test.sh`) and `bin/check`
+(`tests/check_test.sh`), so a syntax error in those two still turns it red, but
+`bin/dev`, `bin/stop` and `.githooks/pre-commit` are checked by nothing — run
+`bash -n` and ShellCheck on any of the five by hand when you change one.
 
 | Step | Command | What it is |
 |------|---------|------------|
 | install | `bin/setup` | idempotent: `mise install` if mise exists (best-effort — a failure only warns, and the exit code is still decided by the five tools below), then installs only what `command -v` shows missing among shellcheck, curl, python3, ss, ps — `apt-get` directly as root, `sudo -n apt-get` otherwise; nothing missing means no apt-get/sudo call, no usable installer means a message naming the missing tools and a non-zero exit |
 | run | `bin/dev` | bin/mini models — on developerz.ai runs, start it with code_bash_background when you need a running stack |
-| prove | `bin/check` | guards shellcheck first (exit 75 when missing), then for f in bin/mini lib/*.sh platforms/*.sh install.sh; do bash -n "$f" \|\| exit 1; done && bash .github/run-tests.sh && a runner-can-fail probe (drives `.github/run-tests.sh` with a deliberately failing stub member and fails the gate if the runner exits 0) && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 over the same list — `bin/setup`, `bin/dev`, `bin/check`, `bin/stop` and `.githooks/pre-commit` are not covered (check them by hand with `bash -n`); `bin/check <files…>` scopes to the named files and exits 79 |
+| prove | `bin/check` | guards shellcheck first (exit 75 when missing), then for f in bin/mini lib/*.sh platforms/*.sh install.sh; do bash -n "$f" \|\| exit 1; done && bash .github/run-tests.sh && a runner-can-fail probe (drives `.github/run-tests.sh` with a deliberately failing stub member and fails the gate if the runner exits 0) && bash .github/run-tests_test.sh && shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 over the same list — `bin/setup`, `bin/dev`, `bin/check`, `bin/stop` and `.githooks/pre-commit` are not in that list (the suite executes `bin/setup` and `bin/check`; lint all five by hand with `bash -n` and ShellCheck); `bin/check <files…>` scopes to the named files and exits 79 |
 | stop | `bin/stop` | bin/mini stop \|\| true — on developerz.ai runs, the platform runs this when your session ends — do not stop the stack yourself |
 
 ## Rules

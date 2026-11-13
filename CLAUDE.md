@@ -60,7 +60,7 @@ Gate scope:
 | Files | Covered? |
 |---|---|
 | `bin/mini`, `lib/*.sh`, `platforms/*.sh`, `install.sh` | Yes — gate and CI (`bash -n` + ShellCheck). |
-| `bin/setup`, `bin/dev`, `bin/check`, `bin/stop`, `.githooks/pre-commit` | NOT covered — a syntax error there passes the gate and CI unnoticed; run `bash -n` on them by hand when you change one. |
+| `bin/setup`, `bin/dev`, `bin/check`, `bin/stop`, `.githooks/pre-commit` | Not in the `bash -n`/ShellCheck list of the gate or CI. The suite executes `bin/setup` (`setup_test.sh`) and `bin/check` (`check_test.sh`), so a syntax error in those two fails the run; `bin/dev`, `bin/stop` and `.githooks/pre-commit` are checked by nothing. Run `bash -n` and ShellCheck on them by hand when you change one. |
 | `tests/*.sh`, `.github/*.sh` | In neither `bash -n`/ShellCheck list, but the suite still executes `tests/*.sh` and `.github/run-tests*.sh`, so a broken test fails the run. |
 | `share/tools/*` | Never syntax- or lint-checked anywhere — check by hand. |
 
