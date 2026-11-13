@@ -38,12 +38,12 @@ shellcheck (lint).
 | `bash .github/run-tests.sh` | The whole offline suite, every `tests/*.sh`. |
 | `mini doctor` | Every runtime check, each prints its fix command. Must be clean. |
 
-`bin/check` runs, in order: `bash -n` over `bin/mini lib/*.sh platforms/*.sh
-install.sh` (the same list CI checks) → `bash .github/run-tests.sh` → a probe
-driving the runner with a deliberately failing member → `bash
-.github/run-tests_test.sh` → ShellCheck over the same files. `bin/check
-<files…>` is a scoped run: `bash -n` + ShellCheck on those files only, suite
-skipped.
+### `bin/check` — the gate
+
+| Mode | Runs, in order |
+|---|---|
+| Full | `bash -n` over `bin/mini lib/*.sh platforms/*.sh install.sh` (the same list CI checks) → `bash .github/run-tests.sh` → a probe driving the runner with a deliberately failing member → `bash .github/run-tests_test.sh` → ShellCheck over the same files |
+| Scoped: `bin/check <files…>` | `bash -n` + ShellCheck on those files only; suite skipped |
 
 | `bin/check` exit | Meaning |
 |---|---|
@@ -55,14 +55,14 @@ skipped.
 `.githooks/pre-commit` execs `bin/check`. Activate once per clone: `git config
 core.hooksPath .githooks`.
 
-Gate scope: only `bin/mini`, `lib/*.sh`, `platforms/*.sh` and `install.sh` are
-checked. `bin/setup`, `bin/dev`, `bin/check`, `bin/stop` and
-`.githooks/pre-commit` are NOT covered — a syntax error there passes the gate
-and CI unnoticed, so run `bash -n` on them by hand when you change one. And
-`share/tools/*`, `tests/*.sh`, `.github/*.sh` are in neither `bin/check`'s file
-list nor CI's `bash -n`/ShellCheck: the suite still executes `tests/*.sh` and
-`.github/run-tests*.sh`, so a broken test fails the run, but `share/tools/*` is
-never syntax- or lint-checked — check it by hand.
+Gate scope:
+
+| Files | Covered? |
+|---|---|
+| `bin/mini`, `lib/*.sh`, `platforms/*.sh`, `install.sh` | Yes — gate and CI (`bash -n` + ShellCheck). |
+| `bin/setup`, `bin/dev`, `bin/check`, `bin/stop`, `.githooks/pre-commit` | NOT covered — a syntax error there passes the gate and CI unnoticed; run `bash -n` on them by hand when you change one. |
+| `tests/*.sh`, `.github/*.sh` | In neither `bash -n`/ShellCheck list, but the suite still executes `tests/*.sh` and `.github/run-tests*.sh`, so a broken test fails the run. |
+| `share/tools/*` | Never syntax- or lint-checked anywhere — check by hand. |
 
 ## Layout
 
@@ -113,12 +113,12 @@ never syntax- or lint-checked — check it by hand.
 
 Plain bash under `tests/`, no framework: `bash .github/run-tests.sh`.
 
-Runner contract: no arguments → every `tests/*.sh` (eleven today); explicit
-script paths override that list. Each member runs as its own process (`bash
-"$t"`) so exported env cannot leak between members. Every member runs even when
-an earlier one fails. Verdict = **exit code alone** — never grep output for
-`FAIL`/`SKIP`; a script printing `SKIP` under its own contract (no python3,
-running as root) exits 0 and stays green.
+Runner contract:
+
+- No arguments → every `tests/*.sh` (eleven today); explicit script paths override that list.
+- Each member runs as its own process (`bash "$t"`) — exported env cannot leak between members.
+- Every member runs even when an earlier one fails.
+- Verdict = **exit code alone** — never grep output for `FAIL`/`SKIP`; a script printing `SKIP` under its own contract (no python3, running as root) exits 0 and stays green.
 
 | Script | What it pins |
 |---|---|
@@ -136,11 +136,14 @@ running as root) exits 0 and stays green.
 
 Every test is hermetic: own `mktemp` sandbox, no live model service, no
 credential, no network, literal URLs never fetched. Scripts isolate external
-commands themselves — PATH stubs (curl/w3m/systemctl/sudo/nvidia-smi/rocm-smi/
-lspci), fixed system-only PATHs, or shell-function stubs. E.g. `model_flag_test.sh`
-needs none (its flag guard fires before any probe); `mini_bin_dir_test.sh` fixes
-PATH to `/usr/bin:/bin` and stubs opencode as a shell function;
-`ollama_systemd_failure_test.sh` neutralises systemctl and sudo with functions.
+commands themselves:
+
+| Isolation | Example |
+|---|---|
+| PATH stubs | curl/w3m/systemctl/sudo/nvidia-smi/rocm-smi/lspci |
+| Fixed system-only PATH | `mini_bin_dir_test.sh` fixes PATH to `/usr/bin:/bin` and stubs opencode as a shell function |
+| Shell-function stubs | `ollama_systemd_failure_test.sh` neutralises systemctl and sudo with functions |
+| None needed | `model_flag_test.sh` — its flag guard fires before any probe |
 
 | When you touch… | Do |
 |---|---|
