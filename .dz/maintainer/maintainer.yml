@@ -51,6 +51,13 @@ escalate:
   # Empty: nothing beyond the platform's hardcoded asks (security, license, CLA).
   ask_before_acting: []
 
+scout:
+  # Declared explicitly so the filing filter of the weekly repo-survey is visible here. It matches
+  # the platform default (broken_only): the survey files findings only for something already broken.
+  # There is no survey entry under `schedules:` on purpose: schedule items require a brief_file and
+  # the survey cron is driven by the platform, not by a repo checkup brief.
+  survey: broken_only
+
 schedules:
   # Weekly (owner, 2026-11-06: routine maintenance weekly, CVE daily). Security has its own lanes.
   - name: health
