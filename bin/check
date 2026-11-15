@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# one-command check (typecheck + lint + test) — established by dz-runner setup mode. One command; adjust as the repo grows.
+# one-command check (typecheck + lint + test) — owned by this repository's maintainers. One command; adjust as the repo grows.
 # The full gate mirrors .github/workflows/shell-checks.yml step for step: bash -n,
 # the suite, the runner-can-fail probe, the runner's verdict self-test, ShellCheck —
 # plus one pass CI lacks: a syntax-only bash -n over the five dev-workflow scripts
@@ -38,6 +38,7 @@ fi
 
 for f in "${SHELL_FILES[@]}" "${SYNTAX_FILES[@]}"; do bash -n "$f" || exit 1; done
 bash .github/run-tests.sh
+bash bin/check-public-tree --self-test && bash bin/check-public-tree
 
 # Proves the runner can fail (as CI does): drive it with a deliberately failing
 # member; a zero exit means a broken runner. Subshell so the unset and the trap

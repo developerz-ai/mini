@@ -2,7 +2,7 @@
 description: Adding a distro module and its prompt. Use for platforms, share/prompts, detect_os, platform_install_pkgs.
 ---
 
-> House skill — established by dz-runner setup mode from this repo's own evidence, then owned by its maintainers. Correct it in place; setup never overwrites a skill that exists.
+> House skill — owned by this repository's maintainers, and written from this repository's own evidence. Correct it in place; setup never overwrites a skill that exists.
 
 1. Map the distro in the `case` in `detect_os()` (`lib/detect.sh`) so it resolves to a platform id.
 2. Copy `platforms/debian.sh` to `platforms/<id>.sh` and reimplement the five functions: `platform_name`, `platform_supported`, `platform_install_pkgs`, `platform_install_cmd_for`, `platform_bootstrap`.

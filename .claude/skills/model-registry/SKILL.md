@@ -2,7 +2,7 @@
 description: Adding or verifying a row in the model registry. Use for models.tsv, num_ctx, context length, ollama show.
 ---
 
-> House skill — established by dz-runner setup mode from this repo's own evidence, then owned by its maintainers. Correct it in place; setup never overwrites a skill that exists.
+> House skill — owned by this repository's maintainers, and written from this repository's own evidence. Correct it in place; setup never overwrites a skill that exists.
 
 1. Add one row to `share/models.tsv` as `id<TAB>min_budget_mb<TAB>max_ctx<TAB>class<TAB>note`. Keep it tab-separated and hand-aligned.
 2. Verify both facts before you keep the row:
