@@ -124,7 +124,8 @@ fi
 
 [[ $(git -C "$repo_root" rev-parse --show-toplevel) == "$repo_root" ]] || { echo "check-public-tree: git answers for another repository's tree" >&2; exit 1; }
 mapfile -d '' files < <(git -C "$repo_root" ls-files -z)
-printf '%s\n' "${files[@]}" | grep -qxF "$self" || { echo 'check-public-tree: the scan does not see this file, so its root is wrong' >&2; exit 1; }
+# A here-string, not a pipe: under pipefail an early \`grep -q\` match would SIGPIPE a long listing.
+grep -qxF "$self" <<< "$(printf '%s\n' "${files[@]}")" || { echo 'check-public-tree: the scan does not see this file, so its root is wrong' >&2; exit 1; }
 read=0
 failures=0
 for path in "${files[@]}"; do
