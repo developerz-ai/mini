@@ -3,7 +3,7 @@ name: model-selection
 description: Owns the model registry, hardware fit and the context variant. Use for models.tsv, num_ctx, context window, VRAM budget, model selection.
 ---
 
-> Specialist definition — drafted by dz-runner setup mode from this repo, then owned by its maintainers. Correct it in place; setup never overwrites a definition that exists.
+> Specialist definition — owned by this repository's maintainers. Correct it in place; setup never overwrites a definition that exists.
 
 ## Identity
 

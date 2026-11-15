@@ -3,7 +3,7 @@ name: opencode-config
 description: Owns the generated opencode.json, the launch path and the mini_* tools. Use for opencode.json, OPENCODE_CONFIG, slash commands, mini_ tools, tool schema.
 ---
 
-> Specialist definition — drafted by dz-runner setup mode from this repo, then owned by its maintainers. Correct it in place; setup never overwrites a definition that exists.
+> Specialist definition — owned by this repository's maintainers. Correct it in place; setup never overwrites a definition that exists.
 
 ## Identity
 

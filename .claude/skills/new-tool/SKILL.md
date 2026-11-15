@@ -2,7 +2,7 @@
 description: Shipping a new agent tool end to end. Use for share/tools, share/opencode-tools, mini_ prefix, doctor check.
 ---
 
-> House skill — established by dz-runner setup mode from this repo's own evidence, then owned by its maintainers. Correct it in place; setup never overwrites a skill that exists.
+> House skill — owned by this repository's maintainers, and written from this repository's own evidence. Correct it in place; setup never overwrites a skill that exists.
 
 1. Write the bash script in `share/tools/<name>` with `set -euo pipefail`: curl, coreutils, awk, sed only — no `jq`, and `python3` only opportunistically with a fallback.
 2. Write the TS wrapper in `share/opencode-tools/<name>.ts` that exposes the script to opencode.

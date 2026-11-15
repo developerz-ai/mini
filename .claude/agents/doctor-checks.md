@@ -3,7 +3,7 @@ name: doctor-checks
 description: Owns the doctor checks and the fix line each one prints. Use for doctor, health check, fix line, sudo mode, ollama bind verdict.
 ---
 
-> Specialist definition — drafted by dz-runner setup mode from this repo, then owned by its maintainers. Correct it in place; setup never overwrites a definition that exists.
+> Specialist definition — owned by this repository's maintainers. Correct it in place; setup never overwrites a definition that exists.
 
 ## Identity
 

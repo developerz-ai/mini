@@ -4,7 +4,7 @@ description: Prove a change in developerz-ai/mini before committing or opening a
 
 # Verify a change in developerz-ai/mini
 
-> House skill — established by dz-runner setup mode from this repo’s own
+> House skill — owned by this repository's maintainers, and written from this repository's own
 > detected commands. Correct it in place; setup never overwrites a skill that exists.
 
 ## The one gate

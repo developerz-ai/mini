@@ -93,6 +93,14 @@ jobs:
       # SC2015 and SC2016 stay off: both are house idioms here — `a && b || c`
       # one-liners and single-quoted text carrying literal backticks. Every
       # other code is enforced, warnings and errors included.
+      - name: Public tree
+        env:
+          # The public-tree guard's private words (bin/check-public-tree). Required on this
+          # repository's own runs, where the secret exists; forks and Dependabot get none.
+          PUBLIC_TREE_PRIVATE_WORDS: ${{ secrets.PUBLIC_TREE_PRIVATE_WORDS }}
+          PUBLIC_TREE_PRIVATE_WORDS_REQUIRED: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]' && '1' || '' }}
+        run: bash bin/check-public-tree --self-test && bash bin/check-public-tree
+
       - name: Run ShellCheck
         shell: bash
         run: shellcheck -x --source-path=lib --source-path=platforms -e SC2015 -e SC2016 bin/mini lib/*.sh platforms/*.sh install.sh
