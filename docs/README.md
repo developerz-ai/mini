@@ -8,6 +8,7 @@
 | [tools.md](tools.md) | `sysreport`, `websearch`, `webfetch` — and how to add your own |
 | [prompts.md](prompts.md) | The system prompt: what goes in it, how to write for a small model |
 | [troubleshooting.md](troubleshooting.md) | When it stops mid-task, runs slow, or breaks something |
+| [standards/README.md](standards/README.md) | Coding, structure and testing rules for working on mini, each with its source |
 | [../platforms/README.md](../platforms/README.md) | Adding a distro |
 
 Working on mini itself? Start with [../CLAUDE.md](../CLAUDE.md).

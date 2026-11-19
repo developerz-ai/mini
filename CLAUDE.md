@@ -107,7 +107,7 @@ Gate scope:
 | New platform | See `platforms/README.md`. Two files, no registry to edit. |
 | New tool | Bash script in `share/tools/`, TS wrapper in `share/opencode-tools/`, a row in the table in `share/prompts/base.md`, a check in `lib/doctor.sh`. |
 | New slash command | The `command` block in `opencode_write_config`. |
-| Docs | `README.md` is for users; `docs/` has seven pages — README, architecture, models, prompts, tools, troubleshooting, usage. Update the relevant one in the same change. |
+| Docs | `README.md` is for users; `docs/` has seven pages — README, architecture, models, prompts, tools, troubleshooting, usage — plus `docs/standards/README.md`, the coding, structure and testing rules. Update the relevant one in the same change. |
 
 ## Testing
 
