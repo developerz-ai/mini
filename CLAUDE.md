@@ -42,7 +42,7 @@ shellcheck (lint).
 
 | Mode | Runs, in order |
 |---|---|
-| Full | `bash -n` over `bin/mini lib/*.sh platforms/*.sh install.sh` (the same list CI checks) PLUS `bin/setup bin/dev bin/check bin/stop .githooks/pre-commit` (the five dev-workflow scripts — syntax only; CI's bash -n list is unchanged) → `bash .github/run-tests.sh` → a probe driving the runner with a deliberately failing member → `bash .github/run-tests_test.sh` → ShellCheck over `bin/mini lib/*.sh platforms/*.sh install.sh` (unchanged — CI's exact list) |
+| Full | `bash -n` over `bin/mini lib/*.sh platforms/*.sh install.sh` (the same list CI checks) PLUS `bin/setup bin/dev bin/check bin/stop .githooks/pre-commit` (the five dev-workflow scripts — syntax only; CI's bash -n list is unchanged) → `bash .github/run-tests.sh` → `bash bin/check-public-tree --self-test && bash bin/check-public-tree` → a probe driving the runner with a deliberately failing member → `bash .github/run-tests_test.sh` → ShellCheck over `bin/mini lib/*.sh platforms/*.sh install.sh` (unchanged — CI's exact list) |
 | Scoped: `bin/check <files…>` | `bash -n` + ShellCheck on those files only; suite skipped |
 
 | `bin/check` exit | Meaning |
@@ -86,7 +86,7 @@ Gate scope:
 | `.github/run-tests.sh` | Suite runner (outside `tests/` on purpose). `run-tests_test.sh` is its verdict self-test. |
 | `.github/workflows/shell-checks.yml` | CI: the single `shell-checks` job. |
 | `.githooks/` | `pre-commit` → `bin/check`. |
-| `.dz/` | developerz.ai config: `maintainer/maintainer.yml` (`pr.required_checks`), `briefs/`, `onboarding/`. |
+| `.dz/` | developerz.ai config: `maintainer/maintainer.yml` (`pr.required_checks`), `schedules/`, `onboarding/`. |
 
 ## What actually makes it work
 
@@ -106,7 +106,7 @@ Gate scope:
 | New model | Row in `share/models.tsv`, ordered best → smallest (selection takes the first row that fits). Re-date the header comment. Verify first: `ollama show <m>` lists `tools`; context column = its real `context length`. **No reasoning models** (`<think>` eats the output budget; qwen3:0.6b returned empty content) — prefer `-instruct`. The registry is tab-separated, hand-aligned; `models_rows` squeezes repeated tabs. |
 | New platform | See `platforms/README.md`. Two files, no registry to edit. |
 | New tool | Bash script in `share/tools/`, TS wrapper in `share/opencode-tools/`, a row in the table in `share/prompts/base.md`, a check in `lib/doctor.sh`. |
-| New slash command | The `command` block in `opencode_write_config`. |
+| New slash command | The `command` block built by `opencode_command_block` in `lib/opencode.sh`. |
 | Docs | `README.md` is for users; `docs/` has seven pages — README, architecture, models, prompts, tools, troubleshooting, usage — plus `docs/standards/README.md`, the coding, structure and testing rules. Update the relevant one in the same change. |
 
 ## Testing
