@@ -78,7 +78,7 @@ doctor_run() {
 
   step "Platform"
   if [ "$OS_PLATFORM" = 'debian' ]; then
-    d_ok "${OS_NAME} — supported (debian family)"
+    d_ok "$(platform_name) — supported"
   else
     d_fail "${OS_NAME} — mini only supports the debian family today"
     d_fix "see platforms/README.md to add ${OS_ID}"
